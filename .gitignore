@@ -1,0 +1,24 @@
+# 操作系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+*.swp
+*.sw?
+.idea/
+.vscode/
+
+# 万一被误写入的凭据类文件（双重保险）
+*.key
+*.pem
+secrets.*
+.env
+.env.*
+
+# 本机私有覆盖（不入库）
+*.local.md
+*.local.txt
+
+# 别人用了这个 kit 之后产生的运行时副本
+.installed-by-agent-memory-kit
