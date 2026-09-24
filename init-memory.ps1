@@ -10,9 +10,9 @@
     本脚本只补「目标里缺的文件」，已存在的一律跳过（幂等）。
 
     同时会把以下三行补进目标项目的 .gitignore（已存在则不动）：
-        /AGENTS.md
-        .agents
-        .clineignore
+        /AGENTS.md        ← 本文件
+        .agents           ← 记忆目录
+        .clineignore      ← Cline 的本机忽略规则文件（由 Cline 使用，本脚本不创建它）
 
     为什么默认不进库：这些是**本机 AI 约定**，通常不应出现在给别人 clone 的公共仓库里；
     而两个 agent 都读得到（它们是文件读取，不受 gitignore 影响）。
@@ -139,5 +139,5 @@ if ($List) {
     Write-Host '  1. 填 AGENTS.md 的「结构与启动」「高频铁律」两节（其余留给使用时逐步补）。'
     Write-Host '  2. 重载 VS Code 窗口（Developer: Reload Window），让两个 agent 发现 AGENTS.md。'
     Write-Host '  3. 确认 Cline 能读到：新开会话问「你加载到了哪些规则文件」。'
-    Write-Host '     若读不到，检查 .clineignore 是否把它排除了（本脚本不生成该文件）。'
+    Write-Host '     若读不到，检查 Cline 的本机忽略规则文件 .clineignore 是否排除了 AGENTS.md（本脚本不创建它）。'
 }

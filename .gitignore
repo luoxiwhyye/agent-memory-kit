@@ -22,3 +22,6 @@ secrets.*
 
 # 别人用了这个 kit 之后产生的运行时副本
 .installed-by-agent-memory-kit
+
+# git提交信息
+git-commit-msg.txt

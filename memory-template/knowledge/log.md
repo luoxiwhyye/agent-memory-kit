@@ -2,7 +2,8 @@
 
 > 层：**项目知识 · 历史类**（长期有效，但只在追溯时读）｜总览见仓库根 `AGENTS.md`。
 > ⚠️ **仅供追溯「当时怎么做的 / 为什么这么做」，写代码前请勿通读。**
-> 环境坑见 `pitfalls.md`，验证手段见 `verify.md`，进度/待办见 `../status/ops.md`。
+> 环境坑见 `pitfalls.md`，验证手段见 `verify.md`，契约见 `backend.md`，
+> 部署规则见 `deploy.md`，进度 / 待办见 `../status/ops.md`。
 
 <!--
 填写指引：
