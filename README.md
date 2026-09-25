@@ -4,6 +4,9 @@
 
 **核心问题**：AI 每开一个新会话都从零开始。你把规则写进聊天里，下次它就忘了；写在代码注释里，又找不到。这个 kit 提供一套**分层存放规则**的骨架，让两个 agent 都能自动读到。
 
+> **第一次用？** 直接看 [`TUTORIAL.md`](TUTORIAL.md) —— 从安装到日常使用、多项目共存与 FAQ。
+> 本文件讲「为什么这么设计」。
+
 ---
 
 ## 它解决什么（以及不解决什么）
@@ -19,13 +22,19 @@
 
 ## 快速开始
 
-```powershell
-# 1. 用骨架初始化一个项目（在目标项目里执行）
-pwsh -File ./init-memory.ps1 -Project MyApp
+两个脚本职责不同（区别见下表），所以命令分两步：
 
-# 只预览，不写文件
-pwsh -File ./init-memory.ps1 -List
+```powershell
+# 1. 在 kit 目录里装一次 Skill（全机器共享，所有项目共用这一份）
+pwsh -File ./install.ps1 -List
+pwsh -File ./install.ps1
+
+# 2. 在每个项目里搭记忆骨架（只写该项目内部，先预览）
+pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp -List
+pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp
 ```
+
+> 两步都建议先跑 `-List` 预览。装完 / 搭完记得**重载窗口**（`Developer: Reload Window`）。
 
 生成：
 
@@ -98,10 +107,24 @@ pwsh -File ./init-memory.ps1 -List
 
 `AGENTS.md` 是**跨 agent 的事实标准**（Copilot 同时认 `AGENTS.md` 与 `CLAUDE.md`，Cline 也认它）。
 
-**默认不入库**：`init-memory.ps1` 会把 `/AGENTS.md`、`.agents` 补进目标项目的 `.gitignore` ——
+**默认不入库**：`init-memory.ps1` 会把这三个模式补进目标项目的 `.gitignore` ——
+
+```gitignore
+/AGENTS.md          # 入口文件
+.agents/memory/     # 记忆目录（精确到 memory/，不影响 .agents/skills/）
+.clineignore        # Cline 的本机忽略规则
+```
+
 它们是**本机 AI 约定**，通常不该出现在给别人 clone 的公共仓库里。而两个 agent 读它们走的是
 **文件读取，不受 gitignore 影响**（已核实 Cline 的规则路径是显式拼出来的）。
-想让它们入库，把那几行删掉即可。
+想让它们入库，把这几个模式删掉即可；不想在项目里留痕，可以改写进 `.git/info/exclude`（本机专用、永不入库）。
+
+> 忽略规则**刻意精确到 `.agents/memory/`** —— 这样 `<项目>/.agents/skills/`（仓库级 Skill）
+> 仍可入库、与团队共享。早期版本写的是裸 `.agents`，会连它一起忽略掉；
+> 脚本现在会**检测并警告**这种过宽规则，但不会替你改 `.gitignore`（那是你的文件）。
+>
+> 反过来，让**记忆**入库也是可行的：把 `.agents/memory/status/` 排掉即可 ——
+> 长期知识（约定 / 坑 / 验证手段）团队共享，「此刻做到哪了」仍是你自己的。
 
 ---
 
@@ -113,17 +136,25 @@ skills/
 memory-template/                # 骨架，不含任何项目内容
 install.ps1                     # 把 skills/ 部署到 ~/.agents/skills/
 init-memory.ps1                 # 在目标项目初始化记忆骨架
+TUTORIAL.md                     # 教程：安装 / 多项目共存 / 日常使用 / FAQ
 ```
 
 ### 两个脚本的区别（重要）
 
-|          | `install.ps1`                | `init-memory.ps1`                    |
-| -------- | ---------------------------- | ------------------------------------ |
-| 作用     | 把 Skill 复制到运行时目录    | 在项目里搭记忆骨架                   |
-| 冲突策略 | **镜像**（源删了，目标也删） | **绝不覆盖**（记忆填过就是用户内容） |
-| 为什么   | Skill 是源文件               | 记忆是用户内容                       |
+|          | `install.ps1`                                                       | `init-memory.ps1`                                 |
+| -------- | ------------------------------------------------------------------- | ------------------------------------------------- |
+| 作用     | 把 Skill 复制到运行时目录                                           | 在项目里搭记忆骨架                                |
+| 作用域   | **全机器共享**（`~/.agents/skills/`）                               | **仅目标项目内部**                                |
+| 冲突策略 | **镜像**（源删了，目标也删）                                        | **绝不覆盖**（记忆填过就是用户内容）              |
+| 为什么   | Skill 是源文件                                                      | 记忆是用户内容                                    |
+| 多副本   | 按标记文件里的**安装来源**判定：不是本仓库装的不动，`-Force` 可接管 | 天然互不影响（各写各的项目）                      |
+| `-Prune` | 只删**本仓库**安装的、且源里已删的 Skill                            | 无此选项                                          |
+| `-Force` | 接管运行时目录里别的副本装的 Skill                                  | 覆盖与模板不同的文件（先备份为 `*.bak-<时间戳>`） |
 
 两者都**幂等**，都可 `-List` 预览。
+
+> **多项目不冲突**：`init-memory.ps1` 只写目标项目内部，所以对多少个项目分别执行都互不影响；
+> 唯一共享的是运行时 Skill 目录，而它现在有来源保护。详见 [`TUTORIAL.md`](TUTORIAL.md) 第 3 节。
 
 ### 为什么只有 `memory-hygiene` 一个 Skill
 
@@ -155,4 +186,6 @@ init-memory.ps1                 # 在目标项目初始化记忆骨架
   骨架本身（目录 + Markdown）与平台无关 —— 其它平台手工复制 `memory-template/` 即可。
 - **不替你定领域**：骨架本身与语言 / 框架无关，模板里的小节是**按需启用**的形式示例；
   子文件可以自由增删（约定就是文件 + `AGENTS.md` 索引表一处同步）。
+- **不管 multi-root 工作区**：同一窗口开了多个项目时，多个 `AGENTS.md` 都可能被加载，
+  规则会串。建议一次只开一个项目，或在各自 `AGENTS.md` 顶部注明适用范围。
 - **中文为主**：模板与 Skill 用中文书写。骨架结构本身与语言无关。
