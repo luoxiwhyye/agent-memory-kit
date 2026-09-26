@@ -51,6 +51,18 @@ graph TD
 git clone <你的仓库地址> D:\tools\agent-memory-kit
 ```
 
+装好后 kit 里长这样（`memory-template/` 是**骨架本体**）：
+
+```
+agent-memory-kit/
+├── install.ps1                            # 装 Skill（全机器共享）
+├── init-memory.ps1                        # 搭记忆骨架（每个项目跑一次）
+├── memory-template/                       # ← 骨架本体，结构与目标布局逐层对应
+│   ├── AGENTS.md
+│   └── .agents/memory/{knowledge,status}/
+└── skills/memory-hygiene/SKILL.md
+```
+
 ### 1.2 安装 Skill（只在 kit 目录里做）
 
 ```powershell
@@ -76,6 +88,27 @@ Get-ChildItem "$env:USERPROFILE\.agents\skills\memory-hygiene"
 ---
 
 ## 2. 给第一个项目搭骨架
+
+### 2.0 顺序：先 clone 项目，再搭骨架（不要反过来）
+
+骨架**必须搭在已经 clone 好的项目里**。如果你先把骨架搭在一个空目录、再想把项目 clone 进去，
+git 会直接拒绝：
+
+```
+fatal: destination path 'X' already exists and is not an empty directory.
+```
+
+正确顺序：
+
+1. clone kit 到固定位置（只做一次，什么时候都行）
+2. clone 你的项目到工作目录
+3. 进项目，跑 `init-memory.ps1`
+
+> kit 和你的项目**互不依赖**，放哪都行，不需要相邻、也不需要同一个工作区。
+> 但 kit 别删 —— 以后升级 Skill、补骨架文件都还要用它。
+> 只有一个例外：**全新项目还没有 git 仓库**时，可以先 `mkdir` + `git init` 再搭骨架，都一样。
+
+### 2.1 执行
 
 ```powershell
 cd D:\code\ProjectA
@@ -374,20 +407,40 @@ graph LR
 - 看到的是正常项目，唯一的痕迹是 `.gitignore` 里可能多了一个「本机 AI 约定」块。
 - 如果连这个都不想留：把那几行移到 `.git/info/exclude`（本机专用、不入库，见 2 节末尾）。
 
+### Q11 我以前生成的骨架在项目根目录（`knowledge/`、`status/`），怎么迁移？
+
+早期版本的 `init-memory.ps1` 会把骨架写到项目根，而不是 `.agents/memory/`。
+判断方法：项目根下是不是直接有 `knowledge/` 和 `status/` 两个目录。
+
+迁移就是一次目录移动（**新脚本不会替你搬** —— 它对已存在的文件一律不动）：
+
+```powershell
+mkdir .agents\memory -Force
+Move-Item knowledge .agents\memory\knowledge
+Move-Item status   .agents\memory\status
+git check-ignore -v .agents/memory/status/ops.md   # 确认新位置被忽略
+```
+
+移动完把 `AGENTS.md` 里的路径核对一遍（它本来写的就是 `.agents/memory/...`，所以应该正好对上）。
+如果旧的 `knowledge/`、`status/` 已经被 git 跟踪，还要 `git rm -r --cached knowledge status` 停掉跟踪。
+
 ---
 
 ## 6. 排错速查
 
-| 现象                                            | 原因                                     | 处理                                          |
-| ----------------------------------------------- | ---------------------------------------- | --------------------------------------------- |
-| 脚本报告 `无新增（N 个文件已存在，未覆盖）`     | 之前跑过（正常幂等），或项目已有同名文件 | 看是否有 `!` 标记的冲突项；没有就是已经就绪   |
-| `! AGENTS.md` 出现在列表里                      | 目标已有且内容与模板不同                 | 手工合并（推荐）或 `-Force`（会备份）         |
-| `! some-skill —— 跳过：已由另一份 kit 副本安装` | 运行时那份不是本仓库装的                 | 用 `-Force` 接管，或干脆只保留一份 kit        |
-| `⚠️ .gitignore 里有过宽的规则：.agents`         | 旧版本或手写的规则太宽                   | 手工改成 `.agents/memory/`                    |
-| agent 说不知道有什么规则                        | 没重载窗口，或文件位置不对               | 重载窗口；确认 `AGENTS.md` 在项目根           |
-| agent 答不出有什么 skill                        | Skill 没装到运行时目录                   | 在 kit 目录跑 `install.ps1` 后重载窗口        |
-| 记忆里写出了互相矛盾的两条                      | 局部更新、没通读                         | 让 agent 按 `memory-hygiene` 统一，以代码为准 |
-| `-Prune` 说跳过某个 Skill                       | 那份不是本仓库装的（保护生效）           | 正常行为；确实要删就手工删                    |
+| 现象                                                            | 原因                                                        | 处理                                                            |
+| --------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------- |
+| `git clone` 报 `destination path ... is not an empty directory` | 先在空目录里搭了骨架，再想 clone 进同一目录                 | 删掉该目录重新 clone；本书 2.0 节有正确顺序                     |
+| 脚本报 `模板布局异常：骨架必须与目标布局逐层对应`               | `memory-template/` 被改扁了，或它的 `.agents/` 没提交进仓库 | 恢复 `.agents/memory/` 结构；脚本宁可不跑，也不把记忆写到项目根 |
+| 项目根下出现了 `knowledge/`、`status/`                          | 用的是早期版本（骨架曾写到项目根）                          | 按 FAQ Q11 把两个目录移进 `.agents/memory/`                     |
+| 脚本报告 `无新增（N 个文件已存在，未覆盖）`                     | 之前跑过（正常幂等），或项目已有同名文件                    | 看是否有 `!` 标记的冲突项；没有就是已经就绪                     |
+| `! AGENTS.md` 出现在列表里                                      | 目标已有且内容与模板不同                                    | 手工合并（推荐）或 `-Force`（会备份）                           |
+| `! some-skill —— 跳过：已由另一份 kit 副本安装`                 | 运行时那份不是本仓库装的                                    | 用 `-Force` 接管，或干脆只保留一份 kit                          |
+| `⚠️ .gitignore 里有过宽的规则：.agents`                         | 旧版本或手写的规则太宽                                      | 手工改成 `.agents/memory/`                                      |
+| agent 说不知道有什么规则                                        | 没重载窗口，或文件位置不对                                  | 重载窗口；确认 `AGENTS.md` 在项目根                             |
+| agent 答不出有什么 skill                                        | Skill 没装到运行时目录                                      | 在 kit 目录跑 `install.ps1` 后重载窗口                          |
+| 记忆里写出了互相矛盾的两条                                      | 局部更新、没通读                                            | 让 agent 按 `memory-hygiene` 统一，以代码为准                   |
+| `-Prune` 说跳过某个 Skill                                       | 那份不是本仓库装的（保护生效）                              | 正常行为；确实要删就手工删                                      |
 
 ---
 

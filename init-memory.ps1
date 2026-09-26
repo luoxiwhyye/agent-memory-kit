@@ -6,6 +6,11 @@
     骨架源：  <本仓库>\memory-template\
     目标位置：<目标项目>\AGENTS.md 与 <目标项目>\.agents\memory\
 
+    ⚠️ 模板目录与目标布局**逐层对应**：AGENTS.md 落在项目根，其余全部在 .agents/ 下。
+    模板结构本身就是目标结构（所以其它平台直接手工复制 memory-template/ 也是对的）。
+    脚本会检查这一点，防止有人把模板改回扁平结构 —— 那会把记忆写到项目根目录，
+    并绕过 .gitignore 里的 .agents/memory/ 规则（历史上真的发生过）。
+
     与 install.ps1 的关键差异：**记忆文件一旦被填写就是用户内容，绝不覆盖**。
     默认只补「目标里缺的文件」，已存在的一律跳过（幂等）。
     若目标已有同名文件且内容与模板不同，会单独列出来提示你手工合并
@@ -76,6 +81,34 @@ if (-not (Test-Path -LiteralPath $TemplateRoot)) {
     exit 1
 }
 
+# 模板布局守卫：必须含 .agents/memory/，且除 AGENTS.md 外不能有游离文件。
+# 两种翻车方式都会导致「记忆被写到项目根目录」或「静默只创建一个 AGENTS.md」：
+#   ① 模板被人改回扁平结构（knowledge/ 直接在模板根）；
+#   ② .agents/ 被本仓库的 .gitignore 排除了 → 根本没提交进来，clone 后不自知。
+$layoutRoot = Join-Path $TemplateRoot '.agents\memory'
+$strayFiles = @()
+foreach ($f in (Get-ChildItem -LiteralPath $TemplateRoot -Recurse -File -Force)) {
+    $rel = $f.FullName.Substring($TemplateRoot.Length).TrimStart('\', '/')
+    if ($rel -eq 'AGENTS.md') { continue }
+    if (($rel -like '.agents\*') -or ($rel -like '.agents/*')) { continue }
+    $strayFiles += $rel
+}
+$layoutBroken = (-not (Test-Path -LiteralPath $layoutRoot -PathType Container)) -or ($strayFiles.Count -gt 0)
+if ($layoutBroken) {
+    Write-Host '模板布局异常：骨架必须与目标布局逐层对应（AGENTS.md 在根，其余在 .agents/ 下）。' -ForegroundColor Red
+    if (-not (Test-Path -LiteralPath $layoutRoot -PathType Container)) {
+        Write-Host ("    缺少目录：{0}" -f $layoutRoot) -ForegroundColor Red
+        Write-Host '    （常见原因：.agents/ 被 .gitignore 排除了，没提交进仓库）' -ForegroundColor Red
+    }
+    foreach ($s in $strayFiles) { Write-Host ("    游离文件：{0}" -f $s) -ForegroundColor Red }
+    Write-Host '继续执行会把记忆写到**目标项目的根目录**，且不会被 .gitignore 忽略。' -ForegroundColor Red
+    Write-Host '期望的结构：' -ForegroundColor Yellow
+    Write-Host '    memory-template/AGENTS.md' -ForegroundColor Yellow
+    Write-Host '    memory-template/.agents/memory/knowledge/*.md' -ForegroundColor Yellow
+    Write-Host '    memory-template/.agents/memory/status/*.md' -ForegroundColor Yellow
+    exit 1
+}
+
 if (-not (Test-Path -LiteralPath $Path)) {
     Write-Host "目标目录不存在：$Path" -ForegroundColor Red
     exit 1
@@ -89,7 +122,7 @@ if ($Force) { Write-Host '模式：-Force（内容与模板不同的文件会被
 
 Write-Host ''
 
-$files = Get-ChildItem -LiteralPath $TemplateRoot -Recurse -File
+$files = Get-ChildItem -LiteralPath $TemplateRoot -Recurse -File -Force
 $added = 0
 $skipped = 0
 $conflicts = @()

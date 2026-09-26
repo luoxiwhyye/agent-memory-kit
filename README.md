@@ -133,11 +133,18 @@ pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp
 ```
 skills/
 └── memory-hygiene/SKILL.md     # 记忆的分层判据与维护流程（把它交给 agent）
-memory-template/                # 骨架，不含任何项目内容
+memory-template/                # 骨架本体，不含任何项目内容
+├── AGENTS.md                   #   ← 落在目标项目的根目录
+└── .agents/memory/             #   ← 与目标布局**逐层对应**，脚本只做纯复制
+    ├── knowledge/
+    └── status/
 install.ps1                     # 把 skills/ 部署到 ~/.agents/skills/
 init-memory.ps1                 # 在目标项目初始化记忆骨架
 TUTORIAL.md                     # 教程：安装 / 多项目共存 / 日常使用 / FAQ
 ```
+
+> `memory-template/` 的结构**就是**目标项目的结构 —— 所以其它平台直接手工复制它也是对的，
+> 不会出现「复制到错位置」。脚本会校验这一点，模板被改扁时直接报错退出。
 
 ### 两个脚本的区别（重要）
 
@@ -183,7 +190,8 @@ TUTORIAL.md                     # 教程：安装 / 多项目共存 / 日常使�
 - **没有自动清理**：`status/` 的回收靠纪律（闭环后当天删），没有工具强制。
   `memory-hygiene` Skill 里有一张「五种腐烂方式」自查表用来定期体检。
 - **只有 PowerShell 脚本**：`init-memory.ps1` / `install.ps1` 是 Windows 优先的。
-  骨架本身（目录 + Markdown）与平台无关 —— 其它平台手工复制 `memory-template/` 即可。
+  骨架本身（目录 + Markdown）与平台无关 —— 其它平台直接手工复制 `memory-template/` 即可
+  （它的结构与目标布局逐层对应，不会复制错位置）。
 - **不替你定领域**：骨架本身与语言 / 框架无关，模板里的小节是**按需启用**的形式示例；
   子文件可以自由增删（约定就是文件 + `AGENTS.md` 索引表一处同步）。
 - **不管 multi-root 工作区**：同一窗口开了多个项目时，多个 `AGENTS.md` 都可能被加载，

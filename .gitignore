@@ -25,3 +25,6 @@ secrets.*
 
 # git提交信息
 git-commit-msg.txt
+
+# ⚠️ 不要在这里加 .agents —— memory-template/.agents/ 是骨架本体，
+#    被忽略后会提交不进仓库，clone 下来的人拿到的是残缺模板。
