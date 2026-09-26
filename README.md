@@ -22,9 +22,13 @@
 
 ## 快速开始
 
-两个脚本职责不同（区别见下表），所以命令分两步：
+两个脚本职责不同（区别见下表），所以按「拿到 kit → 装 Skill → 搭骨架」三步来：
 
 ```powershell
+# 0. 先拿到 kit（只做一次；已有副本就直接用它，别再 clone 第二份）
+git clone https://github.com/luoxiwhyye/agent-memory-kit.git D:\tools\agent-memory-kit
+cd D:\tools\agent-memory-kit
+
 # 1. 在 kit 目录里装一次 Skill（全机器共享，所有项目共用这一份）
 pwsh -File ./install.ps1 -List
 pwsh -File ./install.ps1
@@ -34,7 +38,7 @@ pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp -List
 pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp
 ```
 
-> 两步都建议先跑 `-List` 预览。装完 / 搭完记得**重载窗口**（`Developer: Reload Window`）。
+> 后两步都建议先跑 `-List` 预览。装完 / 搭完记得**重载窗口**（`Developer: Reload Window`）。
 
 生成：
 

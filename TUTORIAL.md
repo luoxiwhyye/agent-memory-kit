@@ -12,11 +12,11 @@
 
 新手最容易混的就是这三个，混了就必然出「会不会冲突」的焦虑：
 
-| 名字             | 是什么                           | 存在哪                                          | 有几份                        |
-| ---------------- | -------------------------------- | ----------------------------------------------- | ----------------------------- |
-| **kit**          | 这个仓库（脚本 + 模板 + Skill）  | 你 clone 的位置，如 `D:\tools\agent-memory-kit` | 全机器**只维护 1 份**         |
-| **记忆**（骨架） | 某个项目的规则文件               | `<项目>/AGENTS.md` + `<项目>/.agents/memory/`   | **每个项目 1 份，互相看不见** |
-| **Skill**        | 教 agent「怎么维护记忆」的说明书 | `%USERPROFILE%\.agents\skills\memory-hygiene\`  | **全机器 1 份，所有项目共享** |
+| 名字             | 是什么                           | 存在哪                                                    | 有几份                        |
+| ---------------- | -------------------------------- | --------------------------------------------------------- | ----------------------------- |
+| **kit**          | 这个仓库（脚本 + 模板 + Skill）  | 你 clone / 已在开发的那份，如 `D:\tools\agent-memory-kit` | 全机器**只维护 1 份**         |
+| **记忆**（骨架） | 某个项目的规则文件               | `<项目>/AGENTS.md` + `<项目>/.agents/memory/`             | **每个项目 1 份，互相看不见** |
+| **Skill**        | 教 agent「怎么维护记忆」的说明书 | `%USERPROFILE%\.agents\skills\memory-hygiene\`            | **全机器 1 份，所有项目共享** |
 
 ```mermaid
 graph TD
@@ -46,10 +46,19 @@ graph TD
 
 ### 1.1 把 kit 放到一个固定位置
 
+仓库地址：`https://github.com/luoxiwhyye/agent-memory-kit.git`
+
 ```powershell
-# 建议放这里（路径随你，但之后不要再换）
-git clone <你的仓库地址> D:\tools\agent-memory-kit
+# 路径随你；下文命令里的 D:\tools\agent-memory-kit 记得换成你自己的
+git clone https://github.com/luoxiwhyye/agent-memory-kit.git D:\tools\agent-memory-kit
 ```
+
+> **已经有 kit 副本就不要 clone 第二份。** 两种常见情况：
+>
+> - 你就在这个 kit 仓库里开发它 —— 那个工作副本**本身就是 kit**，直接用；
+> - 之前已经 clone 过 —— 用原来那份，不要换位置。
+>
+> 多份副本会争抢同一个 Skill 目录（详见 3.2），是自寻麻烦。
 
 装好后 kit 里长这样（`memory-template/` 是**骨架本体**）：
 
