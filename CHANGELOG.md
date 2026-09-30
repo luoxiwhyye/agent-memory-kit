@@ -4,6 +4,21 @@
 机器可读标记里（`<!-- memory-skeleton: v1.1 -->`）；初始化到项目后，`init-memory.ps1` 与
 `check-memory.ps1` 会提示「目标骨架 vs 当前模板」的版本差，是否合并由你决定（脚本不自动改记忆）。
 
+## [1.1.2] - 2026-09-30
+
+### 新增
+
+- `-Backup` 会在 `.agents/memory/.backup/` 下写 `_SKIP_ME.txt`：让**文档镜像 / 同步 / 备份工具**
+  自己就能看到「跳过整个 `.backup/`」。起因：消费方的 `refresh_backup.py` 递归镜像
+  `.agents/memory/**`，把快照卷进了它的文档镜像。
+- `CHANGELOG.md` 的「骨架」节每个版本补 **迁移动作**；`init-memory.ps1` / `check-memory.ps1`
+  在提示骨架版本差时，会一并指向这里。
+
+### 文档
+
+- `README.md`：⑧ 一行补 `_SKIP_ME.txt`；「已知取舍」的骨架版本条目指向「迁移动作」。
+- `TUTORIAL.md`：排错速查里「骨架版本不同」的处理改为「按 `CHANGELOG.md` 的迁移动作做」。
+
 ## [1.1.1] - 2026-09-30
 
 ### 新增
@@ -66,9 +81,15 @@
 
 ### 骨架（`memory-template/`）
 
-- **v1.1**：首行加机器可读版本标记；维护提示补「引用写小节标题、不写行号」与「标记行不要删」。
-- v1.0：`AGENTS.md` + `.agents/memory/{knowledge,status}`（早期版本曾把 `knowledge/`、`status/`
-  写到项目根，迁移见 `TUTORIAL.md` FAQ Q11）。
+- **v1.1**（当前）
+  - 变更：首行加机器可读版本标记 `<!-- memory-skeleton: v1.1 -->`；维护提示补「引用写小节标题、
+    不写行号」与「标记行不要删」。
+  - **迁移动作（v1.0 → v1.1）**：① 在 `AGENTS.md` 首行加 `<!-- memory-skeleton: v1.1 -->`；
+    ② 顺手在维护提示里补那两条；③ 子文件与目录结构**不用动**。
+- **v1.0**
+  - 变更：`AGENTS.md` + `.agents/memory/{knowledge,status}`。
+  - **迁移动作（更早的扁平结构 → v1.0）**：把项目根的 `knowledge/`、`status/` 移进 `.agents/memory/`，
+    见 `TUTORIAL.md` FAQ Q11。
 
 ## [1.0.0] - 2026-09-24
 

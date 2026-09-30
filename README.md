@@ -198,7 +198,7 @@ pwsh -File <kit路径>/check-memory.ps1 -Strict                 # 有警告也�
 | ⑤ 悬空引用 | **按「文件 + 小节锚点」校验，不看行号**；只查**反引号内**的引用；`文件:行` 形态单独报 WARN |
 | ⑥ 忽略规则 | 过宽规则（裸 `.agents`），以及记忆 / 入口是否真的被忽略 |
 | ⑦ 仓库级 Skill | `.agents/skills/` 有文件、但 `git ls-files` 为空 → 静默未入库（被显式规则点名的忽略算「有意」，只提示） |
-| ⑧ 备份 | `-Backup` 快照到 `.agents/memory/.backup/`（天然被忽略），`-KeepBackups` 控制保留份数；项目另有文档快照脚本时记得排除该目录 |
+| ⑧ 备份 | `-Backup` 快照到 `.agents/memory/.backup/`（天然被忽略），`-KeepBackups` 控制保留份数；项目另有文档快照 / 镜像脚本时记得排除该目录（`.backup/_SKIP_ME.txt` 就是给这类工具看的） |
 | ⑨ 入库文件 | 不得引用 `.agents/memory/`、`docs/_local/` 这类**本机专属**目录 |
 
 退出码：`0` 无错误 / `1` 有错误（`-Strict` 时警告也算）/ `2` 没找到记忆骨架。
@@ -256,6 +256,6 @@ pwsh -File <kit路径>/check-memory.ps1 -Strict                 # 有警告也�
   规则会串。建议一次只开一个项目，或在各自 `AGENTS.md` 顶部注明适用范围。
 - **中文为主**：模板与 Skill 用中文书写。骨架结构本身与语言无关。
 - **骨架版本与升级**：骨架版本写在 `memory-template/AGENTS.md` 首行的机器可读标记里
-  （`<!-- memory-skeleton: v1.1 -->`），仓库级变更见 [`CHANGELOG.md`](CHANGELOG.md)。
-  `init-memory.ps1`（跑的时候）与 `check-memory.ps1`（每次体检）都会提示
-  「目标骨架 vs 当前模板」的版本差 —— **是否合并由你决定，脚本不自动改记忆**。
+  （`<!-- memory-skeleton: v1.1 -->`），仓库级变更见 [`CHANGELOG.md`](CHANGELOG.md)
+  ——**每个骨架版本都带「迁移动作」**。`init-memory.ps1`（跑的时候）与 `check-memory.ps1`（每次体检）
+  都会提示「目标骨架 vs 当前模板」的版本差，并指向迁移动作 —— **是否合并由你决定，脚本不自动改记忆**。

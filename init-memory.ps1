@@ -271,10 +271,12 @@ if ($tplVersion -and (Test-Path -LiteralPath $dstAgents)) {
     if ($dstVersion -eq '') {
         Write-Host ("  ℹ️ 目标 AGENTS.md 没有骨架版本标记（当前模板是 {0}）—— 早期版本或手工写的。" -f $tplVersion) -ForegroundColor DarkGray
         Write-Host ("     对照模板看有没有要补的：{0}" -f $tplAgents) -ForegroundColor DarkGray
+        Write-Host '     迁移动作见 CHANGELOG.md 的「骨架」节。' -ForegroundColor DarkGray
     }
     elseif ($dstVersion -ne $tplVersion) {
         Write-Host ("  ℹ️ 骨架版本不同：目标 {0}，当前模板 {1} —— 模板已更新，可对照 diff 手工合并。" -f $dstVersion, $tplVersion) -ForegroundColor Yellow
         Write-Host ("     （本脚本不自动改你的记忆，只提示）模板：{0}" -f $tplAgents) -ForegroundColor DarkGray
+        Write-Host '     迁移动作见 CHANGELOG.md 的「骨架」节。' -ForegroundColor DarkGray
     }
 }
 

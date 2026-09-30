@@ -30,7 +30,8 @@
     命中即提示「status 是此刻，不是日志」。项目可用 <!-- memory-check: max-status-lines=N --> 覆盖。
 
 .PARAMETER Backup
-    检查前先把 AGENTS.md 与 .agents/memory/ 快照到 `.agents/memory/.backup/<yyyyMMdd-HHmmss>/`。
+    检查前先把 AGENTS.md 与 .agents/memory/ 快照到 `.agents/memory/.backup/<yyyyMMdd-HHmmss>/`，
+    并在 `.backup/` 下写一个 `_SKIP_ME.txt`（提示文档镜像 / 同步工具跳过该目录）。
     快照放在 memory/ 内部是为了**天然被忽略**（`.agents/memory/` 规则覆盖它）；脚本仍会验证一次。
 
 .PARAMETER KeepBackups
@@ -206,10 +207,11 @@ if ($tplVer -ne '' -or $dstVer -ne '') {
     $showTpl = if ($tplVer -eq '') { '（模板无标记）' } else { $tplVer }
     $showDst = if ($dstVer -eq '') { '（无标记：早期版本或手工写的）' } else { $dstVer }
     if ($dstVer -ne '' -and $tplVer -ne '' -and $dstVer -ne $tplVer) {
-        Write-Host ("  骨架版本：目标 {0}，kit 模板 {1} —— 模板已更新，建议对照 diff 手工合并。" -f $showDst, $showTpl) -ForegroundColor Yellow
+        Write-Host ("  骨架版本：目标 {0}，kit 模板 {1} —— 模板已更新，建议对照 diff 手工合并（迁移动作见 CHANGELOG.md 的「骨架」节）。" -f $showDst, $showTpl) -ForegroundColor Yellow
     }
     else {
-        Write-Host ("  骨架版本：目标 {0}，kit 模板 {1}" -f $showDst, $showTpl) -ForegroundColor DarkGray
+        $tail = if ($dstVer -eq '') { ' —— 迁移动作见 CHANGELOG.md 的「骨架」节' } else { '' }
+        Write-Host ("  骨架版本：目标 {0}，kit 模板 {1}{2}" -f $showDst, $showTpl, $tail) -ForegroundColor DarkGray
     }
 }
 
@@ -223,6 +225,12 @@ if ($Backup) {
         $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
         $dest = Join-Path $BackupRoot $stamp
         New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        # 给外部工具留个显式提示：文档镜像 / 同步 / 备份脚本请跳过整个 .backup/
+        $skipFile = Join-Path $BackupRoot '_SKIP_ME.txt'
+        if (-not (Test-Path -LiteralPath $skipFile)) {
+            $skipText = "这是 check-memory -Backup 的临时快照目录（.agents/memory/.backup/）。`n文档镜像 / 同步 / 备份工具请跳过整个 .backup/ 目录。`n"
+            [IO.File]::WriteAllText($skipFile, $skipText, [Text.UTF8Encoding]::new($false))
+        }
         $n = 0
         if ($hasAgents) {
             Copy-Item -LiteralPath $AgentsPath -Destination (Join-Path $dest 'AGENTS.md') -Force
