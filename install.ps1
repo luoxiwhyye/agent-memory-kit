@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     把本仓库 skills/ 下的 Skill 复制部署到运行时目录，让 agent 能加载它们。
 
@@ -30,9 +30,15 @@
     接管运行时目录里「来源不是本仓库」的同名 Skill（覆盖 + 改写标记）。
     平时不需要；只在确认另一份 kit 副本已废弃时使用。
 
+.PARAMETER Check
+    只校验「运行时副本是否与源一致」（逐文件比 SHA256），**不写任何文件**。
+    改完 skills/ 忘了重跑 install 时用它确认；有漂移则以退出码 1 结束。
+    与 -List / -Prune / -Force 同时给出时，以 -Check 为准。
+
 .EXAMPLE
     pwsh -File install.ps1
     pwsh -File install.ps1 -List
+    pwsh -File install.ps1 -Check       # 只读：比哈希，有漂移退出码 1
     pwsh -File install.ps1 -Prune
     pwsh -File install.ps1 -Force
 
@@ -43,7 +49,8 @@
 param(
     [switch]$Prune,
     [switch]$List,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$Check
 )
 
 $ErrorActionPreference = 'Stop'
@@ -102,6 +109,60 @@ if (-not (Test-Path -LiteralPath $DestRoot)) {
 
 $sourceSkills = Get-ChildItem -LiteralPath $SourceRoot -Directory
 $destSkills = if (Test-Path -LiteralPath $DestRoot) { Get-ChildItem -LiteralPath $DestRoot -Directory } else { @() }
+
+# ---------- -Check：只比哈希，不写任何文件（"改完源忘了重跑 install" 的兜底） ----------
+if ($Check) {
+    Write-Step '校验运行时副本与源是否一致（只读，不写任何文件）'
+    Write-Host ("  源：      {0}" -f $SourceSkillsFull)
+    Write-Host ("  运行时：  {0}" -f $DestRoot)
+    Write-Host ''
+    $drift = 0
+    $checked = 0
+    foreach ($skill in $sourceSkills) {
+        $checked++
+        $destDir = Join-Path $DestRoot $skill.Name
+        $reasons = @()
+        if (-not (Test-Path -LiteralPath $destDir)) {
+            $reasons += '运行时没有这个 Skill（从未安装，或已被删除）'
+        }
+        else {
+            if ((Test-SkillOwnership $destDir) -ne 'ours') {
+                $reasons += ("归属不是本仓库：{0}" -f (Get-OwnershipReason $destDir))
+            }
+            foreach ($f in (Get-ChildItem -LiteralPath $skill.FullName -Recurse -File)) {
+                $rel = $f.FullName.Substring($skill.FullName.Length).TrimStart('\', '/')
+                $target = Join-Path $destDir $rel
+                if (-not (Test-Path -LiteralPath $target)) { $reasons += ("缺少 {0}" -f $rel); continue }
+                $hSrc = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash
+                $hDst = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+                if ($hSrc -ne $hDst) { $reasons += ("内容已漂移：{0}" -f $rel) }
+            }
+            foreach ($df in (Get-ChildItem -LiteralPath $destDir -Recurse -File)) {
+                $rel = $df.FullName.Substring($destDir.Length).TrimStart('\', '/')
+                if ($rel -eq $Marker) { continue }
+                if (-not (Test-Path -LiteralPath (Join-Path $skill.FullName $rel))) {
+                    $reasons += ("运行时多出 {0}（源里已删）" -f $rel)
+                }
+            }
+        }
+        if ($reasons.Count -eq 0) {
+            Write-Step ("  = {0}（与源一致）" -f $skill.Name)
+        }
+        else {
+            $drift++
+            Write-Step ("  ! {0} —— 与源不一致：" -f $skill.Name)
+            foreach ($r in $reasons) { Write-Host ("      - {0}" -f $r) -ForegroundColor Yellow }
+        }
+    }
+    Write-Host ''
+    if ($drift -eq 0) {
+        Write-Host ("一致：{0} 个 Skill 的运行时副本与源逐文件哈希相同。" -f $checked) -ForegroundColor Green
+        Write-Host '（agent 加载的就是源里的这一版）' -ForegroundColor DarkGray
+        exit 0
+    }
+    Write-Host ("发现 {0} 个 Skill 与源不一致 —— 跑一次 install.ps1 让运行时副本跟上源。" -f $drift) -ForegroundColor Red
+    exit 1
+}
 
 $changedFiles = 0
 $unchangedFiles = 0

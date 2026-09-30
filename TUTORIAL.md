@@ -34,6 +34,10 @@ graph TD
 
 **一句话记住：记忆按项目分，Skill 全机器共享。**
 
+> **命名约定（全 kit 统一）**：`%USERPROFILE%\.agents\skills\` 是**用户级 Skill 目录**（全机器一份、所有项目共享）；
+> `<项目>\.agents\memory\` 是**项目级记忆目录**（每个项目一份）。两处都叫 `.agents`，**位置和作用完全不同** ——
+> 记忆别写进 Skill 目录，Skill 也不是每项目一份。
+
 关键推论：
 
 - 两个项目之间**永远不会互相污染**——它们各自读自己的 `AGENTS.md`。
@@ -154,7 +158,7 @@ ProjectA/
 3. **重载窗口**，然后问 agent「你加载到了哪些规则文件」确认生效。
 4. **决定 `.gitignore` 的改动要不要提交** —— 脚本不会替你 `git add`。
 
-### 关于 `.gitignore`：脚本加了什么
+### 关于忽略规则：脚本加了什么
 
 ```gitignore
 /AGENTS.md              # 入口文件
@@ -163,19 +167,25 @@ ProjectA/
 ```
 
 为什么默认不入库：这些是**本机 AI 约定**，写着你自己的路径、环境、踩坑记录，
-不适合出现在给别人 clone 的仓库里。而两个 agent 读它们走的是**文件读取，不受 gitignore 影响**，
+不适合出现在给别人 clone 的仓库里。而两个 agent 读它们走的是**文件读取，不受忽略规则影响**，
 所以忽略不影响功能。
+
+**写到哪里可以选（`-IgnoreTarget`）**：
+
+| 模式 | 写进 | 说明 |
+| :--- | :--- | :--- |
+| `gitignore`（默认） | 项目 `.gitignore` | 规则随仓库走；clone 你项目的人也能看到 |
+| `exclude` | `.git/info/exclude` | **不在仓库里留痕**；本机专用、永不入库，换机器 / 新克隆要重配 |
+| `none` | 不写 | 自己管；`check-memory.ps1` 会提示「记忆可能被提交」 |
+
+```powershell
+# 不想让别人在项目里看到那三行：初始化时就写进 .git/info/exclude
+pwsh -File <kit路径>\init-memory.ps1 -Path . -IgnoreTarget exclude
+# 已经用默认模式初始化过、现在想改成 exclude：把那几行从 .gitignore 移到 .git/info/exclude
+```
 
 > 注意 `.agents/memory/` 是**精确**的：`<项目>/.agents/skills/`（仓库级 Skill）
 > **不会被忽略**，可以正常入库与团队共享。
-
-**如果你不想让别人在项目里看到那三行**，更好的做法是把它们写进 `.git/info/exclude`
-（本机专用、永不入库）：
-
-```powershell
-Add-Content .git\info\exclude "`n/AGENTS.md`n.agents/memory/`n.clineignore"
-# 然后把 init-memory.ps1 之前加进 .gitignore 的那几行手工删掉
-```
 
 ---
 
@@ -275,13 +285,20 @@ graph LR
 
 ### 4.4 定期瘦身
 
-每 1~2 周，或者觉得某个文件读起来太累时，直接对 agent 说：
+每 1~2 周，或者觉得某个文件读起来太累时，**先跑机械体检，再让 agent 整理**：
+
+```powershell
+# 只读体检：索引一对一 / 入口行数 / 非 BMP / 悬空锚点 / 忽略规则 / 仓库级 Skill 入库状态
+pwsh -File <kit路径>\check-memory.ps1 -Path .
+pwsh -File <kit路径>\check-memory.ps1 -Path . -Backup    # 先落一份快照，再体检
+```
 
 ```
 按 memory-hygiene 检查一下 .agents/memory，把重复和过期的整理掉
 ```
 
-它会按「删 / 压 / 并 / 升 / 迁」给每条定去向。**整理前先备份**（让它把文件复制一份带日期的）。
+它会按「删 / 压 / 并 / 升 / 迁」给每条定去向。**整理前先备份** —— 用上面的 `-Backup`，
+或让它把文件复制一份带日期的。
 
 ### 4.5 让它自己长大（最重要的一条）
 
@@ -340,8 +357,10 @@ graph LR
 
 ### Q4 我想让记忆入库，和团队共享，怎么办？
 
-把 `.gitignore` 里的忽略规则删掉即可。但**先做一件事**：扫一遍记忆里有没有本机特有的东西
-（绝对路径、`127.0.0.1:xxxx` 端口、账号、内网地址）。
+初始化时就选 `-IgnoreTarget none`（不写任何忽略规则），或事后把 `.gitignore` 里那三行删掉。
+但**先做一件事**：扫一遍记忆里有没有本机特有的东西
+（绝对路径、`127.0.0.1:xxxx` 端口、账号、内网地址）—— `check-memory.ps1` 的第 ⑨ 项
+会自动扫「入库文件引用了 `.agents/memory/`、`docs/_local/` 这类本机专属目录」。
 
 更精细的玩法是**分层入库**：
 
@@ -450,6 +469,12 @@ git check-ignore -v .agents/memory/status/ops.md   # 确认新位置被忽略
 | agent 答不出有什么 skill                                        | Skill 没装到运行时目录                                      | 在 kit 目录跑 `install.ps1` 后重载窗口                          |
 | 记忆里写出了互相矛盾的两条                                      | 局部更新、没通读                                            | 让 agent 按 `memory-hygiene` 统一，以代码为准                   |
 | `-Prune` 说跳过某个 Skill                                       | 那份不是本仓库装的（保护生效）                              | 正常行为；确实要删就手工删                                      |
+| `check-memory` 报 `索引表 ↔ knowledge/` FAIL                     | 加了/删了子文件，却没同步 `AGENTS.md` 索引表                | 两边一起改：`knowledge/` 的文件与索引表**必须一对一**           |
+| `check-memory` 报某个引用「找不到」（⑤）                        | 记忆里引用了不存在的文件，或小节标题已改名                  | 以代码与事实为准改记忆；被推翻的结论要留一句「已不成立，因为…」 |
+| `check-memory` 报「N 个仓库级 Skill 全都没入库」（⑦）           | `.gitignore` 里有裸 `.agents`（过宽）                       | 改成 `.agents/memory/`，再 `git add .agents/skills`             |
+| 改了 `skills/` 但 agent 行为没变                                | 忘了重跑 `install.ps1`                                      | 先 `install.ps1 -Check` 比哈希，再重跑 install                  |
+| `init-memory` 提示「骨架版本不同 / 没有版本标记」               | 模板升级了，或骨架是早期版本                                | 对照 `memory-template/AGENTS.md` 手工合并（脚本不自动改记忆）   |
+| `AGENTS.md`、`.agents/` 出现在 `git status` 里                  | 忽略规则没写 / 写在别处（`-IgnoreTarget none`、或换机器后）  | 跑 `init-memory.ps1` 补规则，或 `check-memory.ps1` 看第 ⑥ 项     |
 
 ---
 
@@ -465,9 +490,16 @@ pwsh -File .\install.ps1 -Force         # 让本副本接管运行时 Skill
 pwsh -File <kit>\init-memory.ps1 -Project <项目名> -List   # 预览
 pwsh -File <kit>\init-memory.ps1 -Project <项目名>         # 搭骨架
 pwsh -File <kit>\init-memory.ps1 -Force                    # 重置（先备份为 *.bak-<时间戳>）
+pwsh -File <kit>\init-memory.ps1 -IgnoreTarget exclude     # 规则写进 .git/info/exclude（不在仓库留痕）
 
 # ── 想改动 kit 本身时 ──────────────────────────────
 # 改了 skills/ 里的内容 → 重跑 install.ps1 并重载窗口
+pwsh -File .\install.ps1 -Check          # 只读：运行时副本有没有跟上源（有漂移退出码 1）
+
+# ── 每个项目里随时可用（在项目目录跑）───────────────
+pwsh -File <kit>\check-memory.ps1 -Path .          # 只读体检：记忆骨架有没有烂
+pwsh -File <kit>\check-memory.ps1 -Backup          # 先落快照（.agents/memory/.backup/），再体检
+pwsh -File <kit>\check-memory.ps1 -Strict          # 有警告也算失败（收尾 / CI 用）
 
 # ── 日常（对 agent 说就行）─────────────────────────
 # 「按 memory-hygiene 检查一下 .agents/memory」
@@ -475,9 +507,10 @@ pwsh -File <kit>\init-memory.ps1 -Force                    # 重置（先备份�
 # 「更新 ops.md 的进度」
 ```
 
-**两个脚本各自只做一件事：**
+**三个脚本各自只做一件事：**
 
-- `install.ps1` = 管**全机器共享的 Skill**（幂等、按来源保护、`-Prune` 只清自己装的）
+- `install.ps1` = 管**全机器共享的 Skill**（幂等、按来源保护、`-Prune` 只清自己装的、`-Check` 比哈希）
 - `init-memory.ps1` = 管**某个项目的记忆骨架**（幂等、绝不覆盖、冲突单独提示）
+- `check-memory.ps1` = **只读回归**：骨架有没有烂（唯一写操作是 `-Backup`）
 
 记住这一点，多项目就不会乱。

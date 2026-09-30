@@ -111,7 +111,7 @@ pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp
 
 `AGENTS.md` 是**跨 agent 的事实标准**（Copilot 同时认 `AGENTS.md` 与 `CLAUDE.md`，Cline 也认它）。
 
-**默认不入库**：`init-memory.ps1` 会把这三个模式补进目标项目的 `.gitignore` ——
+**默认不入库**：`init-memory.ps1` 会把这三个模式写进忽略规则 ——
 
 ```gitignore
 /AGENTS.md          # 入口文件
@@ -119,9 +119,20 @@ pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp
 .clineignore        # Cline 的本机忽略规则
 ```
 
+写到哪里由 `-IgnoreTarget` 决定（规则内容相同）：
+
+| 模式 | 写进 | 什么时候用 |
+| :--- | :--- | :--- |
+| `gitignore`（默认） | 项目 `.gitignore` | 希望 clone 你项目的人也能看到这三行（规则对协作者可见） |
+| `exclude` | `.git/info/exclude` | **不想在仓库里留痕**（本机专用、永不入库）；换机器 / 新克隆要重配一次 |
+| `none` | 不写任何规则 | 自己管忽略规则；`check-memory.ps1` 会提示「记忆可能被提交」 |
+
+```powershell
+pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -IgnoreTarget exclude
+```
+
 它们是**本机 AI 约定**，通常不该出现在给别人 clone 的公共仓库里。而两个 agent 读它们走的是
-**文件读取，不受 gitignore 影响**（已核实 Cline 的规则路径是显式拼出来的）。
-想让它们入库，把这几个模式删掉即可；不想在项目里留痕，可以改写进 `.git/info/exclude`（本机专用、永不入库）。
+**文件读取，不受忽略规则影响**（已核实 Cline 的规则路径是显式拼出来的）。
 
 > 忽略规则**刻意精确到 `.agents/memory/`** —— 这样 `<项目>/.agents/skills/`（仓库级 Skill）
 > 仍可入库、与团队共享。早期版本写的是裸 `.agents`，会连它一起忽略掉；
@@ -129,6 +140,7 @@ pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp
 >
 > 反过来，让**记忆**入库也是可行的：把 `.agents/memory/status/` 排掉即可 ——
 > 长期知识（约定 / 坑 / 验证手段）团队共享，「此刻做到哪了」仍是你自己的。
+> 一开始就想要这个形态：用 `-IgnoreTarget none` 初始化，再手工加这条规则。
 
 ---
 
@@ -142,15 +154,20 @@ memory-template/                # 骨架本体，不含任何项目内容
 └── .agents/memory/             #   ← 与目标布局**逐层对应**，脚本只做纯复制
     ├── knowledge/
     └── status/
-install.ps1                     # 把 skills/ 部署到 ~/.agents/skills/
+install.ps1                     # 把 skills/ 部署到 ~/.agents/skills/（-Check 只比哈希）
 init-memory.ps1                 # 在目标项目初始化记忆骨架
+check-memory.ps1                # 只读回归：校验项目记忆骨架有没有烂
 TUTORIAL.md                     # 教程：安装 / 多项目共存 / 日常使用 / FAQ
+CHANGELOG.md                    # 版本变更（骨架版本单独记）
+_local/                         # 本机私有区（不入库）：kit 自身的评审稿 / 草稿 / 一次性材料
 ```
 
 > `memory-template/` 的结构**就是**目标项目的结构 —— 所以其它平台直接手工复制它也是对的，
 > 不会出现「复制到错位置」。脚本会校验这一点，模板被改扁时直接报错退出。
 
-### 两个脚本的区别（重要）
+### 脚本分工（三个脚本，各只做一件事）
+
+前两个脚本的区别（重要）：
 
 |          | `install.ps1`                                                       | `init-memory.ps1`                                 |
 | -------- | ------------------------------------------------------------------- | ------------------------------------------------- |
@@ -162,7 +179,37 @@ TUTORIAL.md                     # 教程：安装 / 多项目共存 / 日常使�
 | `-Prune` | 只删**本仓库**安装的、且源里已删的 Skill                            | 无此选项                                          |
 | `-Force` | 接管运行时目录里别的副本装的 Skill                                  | 覆盖与模板不同的文件（先备份为 `*.bak-<时间戳>`） |
 
-两者都**幂等**，都可 `-List` 预览。
+两者都**幂等**，都可 `-List` 预览。它们**只管「建」和「装」**；骨架用久了会不会烂，由下面这个脚本回答。
+
+### `check-memory.ps1`：日常回归（第三个脚本，只读）
+
+```powershell
+pwsh -File <kit路径>/check-memory.ps1 -Path D:\code\MyApp     # 只读体检
+pwsh -File <kit路径>/check-memory.ps1 -Backup                 # 整理前先落快照（唯一的写操作）
+pwsh -File <kit路径>/check-memory.ps1 -Strict                 # 有警告也算失败（收尾 / CI）
+```
+
+| 检查 | 说明 |
+| :--- | :--- |
+| ① 索引表 ↔ `knowledge/` | 必须一对一（指向不存在的文件 = 下次读到空） |
+| ② `AGENTS.md` 行数 | 超过建议值（默认 100）告警；`-MaxAgentsLines` 可上调 |
+| ③ 非 BMP 字符 | 只扫记忆文件（长会话被截断会留下孤立代理） |
+| ④ `status/` 新鲜度 | 超过 `-StaleDays`（默认 7）天，或 `状态: 已闭环` 字段未清理 |
+| ⑤ 悬空引用 | **按「文件 + 小节锚点」校验，不看行号** |
+| ⑥ 忽略规则 | 过宽规则（裸 `.agents`），以及记忆 / 入口是否真的被忽略 |
+| ⑦ 仓库级 Skill | `.agents/skills/` 有文件、但 `git ls-files` 为空 → 静默未入库（被显式规则点名的忽略算「有意」，只提示） |
+| ⑧ 备份 | `-Backup` 快照到 `.agents/memory/.backup/`（天然被忽略），`-KeepBackups` 控制保留份数；项目另有文档快照脚本时记得排除该目录 |
+| ⑨ 入库文件 | 不得引用 `.agents/memory/`、`docs/_local/` 这类**本机专属**目录 |
+
+退出码：`0` 无错误 / `1` 有错误（`-Strict` 时警告也算）/ `2` 没找到记忆骨架。
+它只做**机械可判定**的检查；「内容对不对、该不该写」仍归 `memory-hygiene`。
+
+**项目可以自己放宽门槛**（写在自己的 `AGENTS.md` 里，检查器会读；命令行参数仍可临时覆盖）：
+
+```markdown
+<!-- memory-check: max-agents-lines=130 -->   <!-- 入口确实需要更长时用，并写明理由 -->
+<!-- memory-check: stale-days=14 -->          <!-- 放宽 status 的过期阈值 -->
+```
 
 > **多项目不冲突**：`init-memory.ps1` 只写目标项目内部，所以对多少个项目分别执行都互不影响；
 > 唯一共享的是运行时 Skill 目录，而它现在有来源保护。详见 [`TUTORIAL.md`](TUTORIAL.md) 第 3 节。
@@ -184,6 +231,10 @@ TUTORIAL.md                     # 教程：安装 / 多项目共存 / 日常使�
   并用 `<某能力>` 这类占位符写。照抄会跑偏，换成你项目的主题；用不到的小节删掉。
 - **按需增删子文件**：骨架给的是默认集合，不用的文件与 `AGENTS.md` 索引表里的对应行**一起删**。
 - **不要在 `AGENTS.md` 里堆内容** —— 它每次对话都会被加载，建议 ≤100 行，超出的推到子文件。
+- **`_local/` 是本仓库自己的「本机私有区」**（`.gitignore` 里已忽略）：kit 的评审稿、草稿、含真实路径的
+  一次性说明放这里，永不入库。判断口径和记忆一致 —— **不确定要不要公开的，先放 `_local/`**；
+  确认可公开再移出，并去掉本机路径与第三方信息。它只服务于「维护 kit 自身」，
+  与用 kit 给项目搭骨架无关（所以 `TUTORIAL.md` 里不出现它）。
 
 ---
 
@@ -193,7 +244,9 @@ TUTORIAL.md                     # 教程：安装 / 多项目共存 / 日常使�
   （Cline 的 `.clinerules/`、Copilot 的 `.github/copilot-instructions.md`），骨架结构照旧可用。
 - **没有自动清理**：`status/` 的回收靠纪律（闭环后当天删），没有工具强制。
   `memory-hygiene` Skill 里有一张「五种腐烂方式」自查表用来定期体检。
-- **只有 PowerShell 脚本**：`init-memory.ps1` / `install.ps1` 是 Windows 优先的。
+- **三个脚本都是 PowerShell（Windows 优先）**：`init-memory.ps1` / `install.ps1` / `check-memory.ps1`。
+  脚本自身带 UTF-8 BOM，所以 **PowerShell 7（`pwsh`）与 Windows PowerShell 5.1（`powershell`）都能跑**；
+  它们**写出来**的内容文件（记忆 / 骨架）一律是**无 BOM** 的 UTF-8。
   骨架本身（目录 + Markdown）与平台无关 —— 其它平台直接手工复制 `memory-template/` 即可
   （它的结构与目标布局逐层对应，不会复制错位置）。
 - **不替你定领域**：骨架本身与语言 / 框架无关，模板里的小节是**按需启用**的形式示例；
@@ -201,3 +254,7 @@ TUTORIAL.md                     # 教程：安装 / 多项目共存 / 日常使�
 - **不管 multi-root 工作区**：同一窗口开了多个项目时，多个 `AGENTS.md` 都可能被加载，
   规则会串。建议一次只开一个项目，或在各自 `AGENTS.md` 顶部注明适用范围。
 - **中文为主**：模板与 Skill 用中文书写。骨架结构本身与语言无关。
+- **骨架版本与升级**：骨架版本写在 `memory-template/AGENTS.md` 首行的机器可读标记里
+  （`<!-- memory-skeleton: v1.1 -->`），仓库级变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+  `init-memory.ps1`（跑的时候）与 `check-memory.ps1`（每次体检）都会提示
+  「目标骨架 vs 当前模板」的版本差 —— **是否合并由你决定，脚本不自动改记忆**。

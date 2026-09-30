@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     在目标项目里初始化「AI 记忆体系」骨架（AGENTS.md + .agents/memory/）。
 
@@ -20,20 +20,26 @@
     本脚本只写目标项目内部，不碰全局的 ~/.agents/skills/ ——
     所以对多个项目分别执行，彼此不会冲突。
 
-    同时会把以下三个模式补进目标项目的 .gitignore（已存在则不动）：
+    忽略规则写在哪里由 `-IgnoreTarget` 决定（三种模式，规则内容相同）：
         /AGENTS.md              ← 入口文件
-        .agents/memory/         ← 记忆目录（**不含 .agents/skills/**）
+        .agents/memory/         ← 记忆目录（**不含 .agents/skills/**，仓库级 Skill 仍可入库）
         .clineignore            ← Cline 的本机忽略规则文件（由 Cline 使用，本脚本不创建它）
+
+        gitignore（默认）：补进项目 `.gitignore`（随仓库走；别人 clone 也能看到这三行）
+        exclude          ：补进 `.git/info/exclude`（**本机专用、永不入库**；换机器需重配一次）
+        none             ：不写任何规则（自己管；`check-memory.ps1` 会提示「记忆可能被提交」）
 
     为什么默认不入库：这些是**本机 AI 约定**，通常不应出现在给别人 clone 的公共仓库里；
     而两个 agent 都读得到（它们是文件读取，不受 gitignore 影响）。
-    想让它们入库，把这几个模式从 .gitignore 删掉即可。
 
 .PARAMETER Path
     目标项目根目录。默认当前目录。
 
 .PARAMETER Project
     项目名，用于替换模板里的 {{PROJECT}}。默认取目标目录名。
+
+.PARAMETER IgnoreTarget
+    忽略规则写到哪里：`gitignore`（默认）/ `exclude` / `none`。见上文说明。
 
 .PARAMETER List
     只预览将要发生的变更，不写任何文件。
@@ -45,6 +51,7 @@
 
 .EXAMPLE
     pwsh -File init-memory.ps1 -Path D:\code\MyApp -Project MyApp
+    pwsh -File init-memory.ps1 -IgnoreTarget exclude    # 规则只留本机，不入库
     pwsh -File init-memory.ps1 -List
     pwsh -File init-memory.ps1 -Force
 
@@ -55,6 +62,8 @@
 param(
     [string]$Path = '.',
     [string]$Project,
+    [ValidateSet('gitignore', 'exclude', 'none')]
+    [string]$IgnoreTarget = 'gitignore',
     [switch]$List,
     [switch]$Force
 )
@@ -170,42 +179,103 @@ foreach ($f in $files) {
     [IO.File]::WriteAllText($dst, $text, [Text.UTF8Encoding]::new($false))
 }
 
-# ---------- .gitignore ----------
+# ---------- 忽略规则（-IgnoreTarget: gitignore | exclude | none） ----------
 $gitignorePath = Join-Path $TargetRoot '.gitignore'
-$missing = @()
+$excludePath = Join-Path $TargetRoot '.git\info\exclude'
+
+# 过宽规则检查：两个文件都看（早期版本 / 手写过裸 .agents，会把 .agents/skills/ 一起忽略）
 $overBroad = @()
-if (Test-Path -LiteralPath $gitignorePath) {
-    $existing = [IO.File]::ReadAllText($gitignorePath)
-    foreach ($line in $IgnoreLines) {
-        $escaped = [regex]::Escape($line)
-        if ($existing -notmatch "(?m)^\s*$escaped\s*$") { $missing += $line }
-    }
-    foreach ($line in ($existing -split "`r?`n")) {
+foreach ($f in @($gitignorePath, $excludePath)) {
+    if (-not (Test-Path -LiteralPath $f)) { continue }
+    $ln = 0
+    foreach ($line in ([IO.File]::ReadAllText($f) -split "`r?`n")) {
+        $ln++
         $t = $line.Trim()
-        if ($OverBroadIgnore -contains $t) { $overBroad += $t }
+        if ($OverBroadIgnore -contains $t) {
+            $rel = $f.Substring($TargetRoot.Length).TrimStart('\', '/')
+            $overBroad += ("{0}:{1}  {2}" -f $rel, $ln, $t)
+        }
     }
-} else {
-    $missing = $IgnoreLines
 }
 
-if ($missing.Count -gt 0) {
-    Write-Host ''
-    Write-Step ("  .gitignore 将补入 {0} 行：" -f $missing.Count)
-    foreach ($line in $missing) { Write-Item '+' $line }
-    if (-not $List -and $PSCmdlet.ShouldProcess($gitignorePath, '追加忽略规则')) {
-        $block = "`n# ── 本机 AI 约定（不入库；两个 agent 仍可读到） ──`n" + ($missing -join "`n") + "`n"
-        [IO.File]::AppendAllText($gitignorePath, $block, [Text.UTF8Encoding]::new($false))
+function Get-MissingIgnoreLines($file) {
+    $existing = ''
+    if (Test-Path -LiteralPath $file) { $existing = [IO.File]::ReadAllText($file) }
+    $miss = @()
+    foreach ($line in $IgnoreLines) {
+        $escaped = [regex]::Escape($line)
+        if ($existing -notmatch ("(?m)^\s*" + $escaped + "\s*$")) { $miss += $line }
     }
-} else {
-    Write-Step '  .gitignore 已含全部忽略规则（未改动）'
+    return $miss
+}
+
+if ($IgnoreTarget -eq 'none') {
+    Write-Host ''
+    Write-Step '  忽略规则：-IgnoreTarget none —— 不写任何规则'
+    Write-Host '     记忆 / 入口不会被忽略：提交前自己确认（或跑 check-memory.ps1 看第 ⑥ 项）。' -ForegroundColor DarkGray
+}
+else {
+    $targetFile = if ($IgnoreTarget -eq 'exclude') { $excludePath } else { $gitignorePath }
+    $canWrite = $true
+    if ($IgnoreTarget -eq 'exclude' -and -not (Test-Path -LiteralPath (Join-Path $TargetRoot '.git'))) {
+        $canWrite = $false     # .git/info/exclude 只存在于 git 仓库里
+    }
+    $missing = Get-MissingIgnoreLines $targetFile
+    Write-Host ''
+    if (-not $canWrite) {
+        Write-Host '  ! -IgnoreTarget exclude 需要先有 git 仓库（找不到 .git\info\）' -ForegroundColor Yellow
+        Write-Host '    先 git init，或改用 -IgnoreTarget gitignore / none —— 本次不写任何文件。' -ForegroundColor DarkGray
+    }
+    elseif ($missing.Count -eq 0) {
+        Write-Step ("  {0} 已含全部忽略规则（未改动）" -f (Split-Path $targetFile -Leaf))
+    }
+    else {
+        Write-Step ("  {0} 将补入 {1} 行：" -f (Split-Path $targetFile -Leaf), $missing.Count)
+        foreach ($line in $missing) { Write-Item '+' $line }
+        if ($IgnoreTarget -eq 'exclude') {
+            Write-Host '     注：.git/info/exclude 只对本机这份克隆生效 —— 换机器 / 新克隆要重配一次。' -ForegroundColor DarkGray
+        }
+        if (-not $List -and $PSCmdlet.ShouldProcess($targetFile, '追加忽略规则')) {
+            $dir = Split-Path -Parent $targetFile
+            if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+            if ($IgnoreTarget -eq 'exclude') {
+                $block = "`n# ── 本机 AI 约定（仅本机生效，永不入库；换机器需各自重配） ──`n" + ($missing -join "`n") + "`n"
+            }
+            else {
+                $block = "`n# ── 本机 AI 约定（不入库；两个 agent 仍可读到） ──`n" + ($missing -join "`n") + "`n"
+            }
+            [IO.File]::AppendAllText($targetFile, $block, [Text.UTF8Encoding]::new($false))
+        }
+    }
 }
 
 if ($overBroad.Count -gt 0) {
     Write-Host ''
-    Write-Host ("  ⚠️ .gitignore 里有过宽的规则：{0}" -f (($overBroad | Select-Object -Unique) -join '  ')) -ForegroundColor Yellow
+    Write-Host ("  ⚠️ 忽略规则里有「过宽」的：{0}" -f (($overBroad | Select-Object -Unique) -join '  ')) -ForegroundColor Yellow
     Write-Host '     它会把整个 .agents/ 忽略掉，仓库级 Skill（.agents/skills/）就进不了库。' -ForegroundColor Yellow
-    Write-Host '     建议把该行手工替换为：.agents/memory/' -ForegroundColor Yellow
-    Write-Host '     （本脚本不自动改 .gitignore —— 那是你的文件。）' -ForegroundColor DarkGray
+    Write-Host '     建议把该行手工替换为：.agents/memory/（本脚本不自动改 —— 那是你的文件。）' -ForegroundColor DarkGray
+}
+
+# ---------- 骨架版本提示（目标 vs 当前模板；放在汇总之前，-List 也要看到） ----------
+$tplAgents = Join-Path $TemplateRoot 'AGENTS.md'
+$tplVersion = ''
+if (Test-Path -LiteralPath $tplAgents) {
+    $mv = [regex]::Match([IO.File]::ReadAllText($tplAgents), 'memory-skeleton:\s*(v[\w.]+)')
+    if ($mv.Success) { $tplVersion = $mv.Groups[1].Value }
+}
+$dstAgents = Join-Path $TargetRoot 'AGENTS.md'
+if ($tplVersion -and (Test-Path -LiteralPath $dstAgents)) {
+    $mv2 = [regex]::Match([IO.File]::ReadAllText($dstAgents), 'memory-skeleton:\s*(v[\w.]+)')
+    $dstVersion = if ($mv2.Success) { $mv2.Groups[1].Value } else { '' }
+    Write-Host ''
+    if ($dstVersion -eq '') {
+        Write-Host ("  ℹ️ 目标 AGENTS.md 没有骨架版本标记（当前模板是 {0}）—— 早期版本或手工写的。" -f $tplVersion) -ForegroundColor DarkGray
+        Write-Host ("     对照模板看有没有要补的：{0}" -f $tplAgents) -ForegroundColor DarkGray
+    }
+    elseif ($dstVersion -ne $tplVersion) {
+        Write-Host ("  ℹ️ 骨架版本不同：目标 {0}，当前模板 {1} —— 模板已更新，可对照 diff 手工合并。" -f $dstVersion, $tplVersion) -ForegroundColor Yellow
+        Write-Host ("     （本脚本不自动改你的记忆，只提示）模板：{0}" -f $tplAgents) -ForegroundColor DarkGray
+    }
 }
 
 # ---------- 汇总 ----------

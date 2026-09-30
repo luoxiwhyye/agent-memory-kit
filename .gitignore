@@ -16,9 +16,9 @@ secrets.*
 .env
 .env.*
 
-# 本机私有覆盖（不入库）
-*.local.md
-*.local.txt
+# 本机私有区（不入库）：kit 自身的评审稿 / 草稿 / 含真实路径的一次性说明
+# 规则出处见 README「目录约定说明」（不要加没有文档的规则）
+/_local/
 
 # 别人用了这个 kit 之后产生的运行时副本
 .installed-by-agent-memory-kit
