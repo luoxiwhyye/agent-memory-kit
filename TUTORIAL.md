@@ -473,6 +473,8 @@ git check-ignore -v .agents/memory/status/ops.md   # 确认新位置被忽略
 | `check-memory` 报某个引用「找不到」（⑤）                        | 记忆里引用了不存在的文件，或小节标题已改名                  | 以代码与事实为准改记忆；被推翻的结论要留一句「已不成立，因为…」 |
 | `check-memory` 报「N 个仓库级 Skill 全都没入库」（⑦）           | `.gitignore` 里有裸 `.agents`（过宽）                       | 改成 `.agents/memory/`，再 `git add .agents/skills`             |
 | 改了 `skills/` 但 agent 行为没变                                | 忘了重跑 `install.ps1`                                      | 先 `install.ps1 -Check` 比哈希，再重跑 install                  |
+| `check-memory` 报 status「更像日志而不是此刻」（④）              | status 被当成日志用（体量大 / 多个日期 / 一堆 ✅）           | 明细搬 `knowledge/log.md`，status 只留「此刻 + 待办」；确实需要长就用 `memory-check: max-status-lines=N` |
+| `check-memory` 报「行号引用」（⑤）                              | 记忆里写了 `文件.md:123`                                    | 改成「文件 + 小节标题」或 `§编号`（行号一改就漂）              |
 | `init-memory` 提示「骨架版本不同 / 没有版本标记」               | 模板升级了，或骨架是早期版本                                | 对照 `memory-template/AGENTS.md` 手工合并（脚本不自动改记忆）   |
 | `AGENTS.md`、`.agents/` 出现在 `git status` 里                  | 忽略规则没写 / 写在别处（`-IgnoreTarget none`、或换机器后）  | 跑 `init-memory.ps1` 补规则，或 `check-memory.ps1` 看第 ⑥ 项     |
 

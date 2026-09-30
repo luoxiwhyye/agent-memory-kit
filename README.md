@@ -194,8 +194,8 @@ pwsh -File <kit路径>/check-memory.ps1 -Strict                 # 有警告也�
 | ① 索引表 ↔ `knowledge/` | 必须一对一（指向不存在的文件 = 下次读到空） |
 | ② `AGENTS.md` 行数 | 超过建议值（默认 100）告警；`-MaxAgentsLines` 可上调 |
 | ③ 非 BMP 字符 | 只扫记忆文件（长会话被截断会留下孤立代理） |
-| ④ `status/` 新鲜度 | 超过 `-StaleDays`（默认 7）天，或 `状态: 已闭环` 字段未清理 |
-| ⑤ 悬空引用 | **按「文件 + 小节锚点」校验，不看行号** |
+| ④ `status/` 新鲜度与形态 | 超过 `-StaleDays`（默认 7）天；`状态: 已闭环` 未清理；或「更像日志」（行数 > `-MaxStatusLines`、不同日期 > 3、✅ 行占比 > 20%） |
+| ⑤ 悬空引用 | **按「文件 + 小节锚点」校验，不看行号**；只查**反引号内**的引用；`文件:行` 形态单独报 WARN |
 | ⑥ 忽略规则 | 过宽规则（裸 `.agents`），以及记忆 / 入口是否真的被忽略 |
 | ⑦ 仓库级 Skill | `.agents/skills/` 有文件、但 `git ls-files` 为空 → 静默未入库（被显式规则点名的忽略算「有意」，只提示） |
 | ⑧ 备份 | `-Backup` 快照到 `.agents/memory/.backup/`（天然被忽略），`-KeepBackups` 控制保留份数；项目另有文档快照脚本时记得排除该目录 |
@@ -209,6 +209,7 @@ pwsh -File <kit路径>/check-memory.ps1 -Strict                 # 有警告也�
 ```markdown
 <!-- memory-check: max-agents-lines=130 -->   <!-- 入口确实需要更长时用，并写明理由 -->
 <!-- memory-check: stale-days=14 -->          <!-- 放宽 status 的过期阈值 -->
+<!-- memory-check: max-status-lines=120 -->   <!-- status 体量阈值（0 = 关闭形态检查） -->
 ```
 
 > **多项目不冲突**：`init-memory.ps1` 只写目标项目内部，所以对多少个项目分别执行都互不影响；

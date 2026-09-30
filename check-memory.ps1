@@ -24,6 +24,11 @@
 .PARAMETER StaleDays
     status/ 的过期阈值（天）。默认 7，与 session-resume 的过期提示保持一致。
 
+.PARAMETER MaxStatusLines
+    status 文件的体量阈值（行）。默认 80；`0` = 关闭「形态检查」。
+    形态检查还有两个固定信号：文内不同日期 > 3 个、含 ✅ 的行占比 > 20%（仅当文件 ≥ 20 行）——
+    命中即提示「status 是此刻，不是日志」。项目可用 <!-- memory-check: max-status-lines=N --> 覆盖。
+
 .PARAMETER Backup
     检查前先把 AGENTS.md 与 .agents/memory/ 快照到 `.agents/memory/.backup/<yyyyMMdd-HHmmss>/`。
     快照放在 memory/ 内部是为了**天然被忽略**（`.agents/memory/` 规则覆盖它）；脚本仍会验证一次。
@@ -51,6 +56,7 @@ param(
     [string]$Path = '.',
     [int]$MaxAgentsLines = 100,
     [int]$StaleDays = 7,
+    [int]$MaxStatusLines = 80,
     [switch]$Backup,
     [int]$KeepBackups = 5,
     [switch]$Strict
@@ -161,20 +167,21 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 # 项目级门槛覆盖：AGENTS.md 里写 <!-- memory-check: max-agents-lines=130 -->（可选，也可写 stale-days=N）
 $effMaxLines = $MaxAgentsLines
 $effStaleDays = $StaleDays
-$overrideNote = ''
+$effMaxStatusLines = $MaxStatusLines
+$overridden = @()
 if ($hasAgents) {
     $agentsHead = Read-Text $AgentsPath
     $mo = [regex]::Match($agentsHead, 'memory-check:\s*max-agents-lines\s*=\s*(\d+)')
-    if ($mo.Success) {
-        $effMaxLines = [int]$mo.Groups[1].Value
-        $overrideNote = ("（项目自定 max-agents-lines={0}）" -f $effMaxLines)
-    }
+    if ($mo.Success) { $effMaxLines = [int]$mo.Groups[1].Value; $overridden += ("max-agents-lines={0}" -f $effMaxLines) }
     $mo2 = [regex]::Match($agentsHead, 'memory-check:\s*stale-days\s*=\s*(\d+)')
-    if ($mo2.Success) { $effStaleDays = [int]$mo2.Groups[1].Value }
+    if ($mo2.Success) { $effStaleDays = [int]$mo2.Groups[1].Value; $overridden += ("stale-days={0}" -f $effStaleDays) }
+    $mo3 = [regex]::Match($agentsHead, 'memory-check:\s*max-status-lines\s*=\s*(\d+)')
+    if ($mo3.Success) { $effMaxStatusLines = [int]$mo3.Groups[1].Value; $overridden += ("max-status-lines={0}" -f $effMaxStatusLines) }
 }
+$overrideNote = if ($overridden.Count -gt 0) { ("（项目自定：" + ($overridden -join '、') + "）") } else { '' }
 
 Write-Host ("check-memory（只读）   目标：{0}" -f $TargetRoot) -ForegroundColor White
-Write-Host ("  阈值：AGENTS.md <= {0} 行{3}；status 过期 > {1} 天；git = {2}" -f $effMaxLines, $effStaleDays, $(if ($gitOk) { '可用' } else { '不可用（跳过入库类检查）' }), $overrideNote) -ForegroundColor DarkGray
+Write-Host ("  阈值：AGENTS.md <= {0} 行；status 过期 > {1} 天 / 体量 <= {2} 行；git = {3}{4}" -f $effMaxLines, $effStaleDays, $effMaxStatusLines, $(if ($gitOk) { '可用' } else { '不可用（跳过入库类检查）' }), $overrideNote) -ForegroundColor DarkGray
 
 if (-not $hasAgents -and -not $hasMemory) {
     Write-Host ''
@@ -326,6 +333,24 @@ else {
         if ($t -match '(?m)^\s*[-*]?\s*状态\s*[:：]\s*已闭环') {
             Write-Warn2 ("{0} 的「状态」字段是「已闭环」—— status 只写「此刻」，闭环后当天删（拿不准就压成一行指针）" -f $rel)
         }
+        # 形态检查：status 是「此刻」，不是日志（体量 / 日期数 / 已完成占比）
+        if ($effMaxStatusLines -gt 0) {
+            $rows = @($t -split "`r?`n")
+            if ($rows.Count -gt 1 -and $rows[-1] -eq '') { $rows = $rows[0..($rows.Count - 2)] }   # 与 Get-Content 口径一致
+            $dateCount = @([regex]::Matches($t, '20\d{2}-\d{2}-\d{2}') | ForEach-Object { $_.Value } | Sort-Object -Unique).Count
+            $doneLines = @($rows | Where-Object { $_ -match '✅|✔' }).Count
+            $doneRatio = if ($rows.Count -gt 0) { [double]$doneLines / $rows.Count } else { 0 }
+            $hits = @()
+            if ($rows.Count -gt $effMaxStatusLines) { $hits += ("{0} 行 > {1}" -f $rows.Count, $effMaxStatusLines) }
+            if ($dateCount -gt 3) { $hits += ("{0} 个不同日期" -f $dateCount) }
+            if ($rows.Count -ge 20 -and $doneRatio -gt 0.2) { $hits += ("{0}% 的行带已完成标记" -f [int]($doneRatio * 100)) }
+            if ($hits.Count -gt 0) {
+                Write-Warn2 ("{0} 更像日志而不是「此刻」（{1}）—— status 只写此刻；明细搬 knowledge/log.md，这里只留指针" -f $rel, ($hits -join '、'))
+            }
+            else {
+                Write-Note ("{0} 体量正常（{1} 行 / {2} 个日期 / {3}% 已完成行）" -f $rel, $rows.Count, $dateCount, [int]($doneRatio * 100))
+            }
+        }
         $ds = @([regex]::Matches($t, '(20\d{2})-(\d{2})-(\d{2})'))
         if ($ds.Count -eq 0) {
             if (-not (Test-HasSubstantive $t)) {
@@ -463,10 +488,24 @@ if ($refBody -gt 0) {
     $more = if ($refBody -gt 3) { ' 等' } else { '' }
     Write-Note ("{0} 处锚点只命中正文（不是小节标题；能定位，但指向标题更好）：{1}{2}" -f $refBody, $shown, $more)
 }
+# 行号引用（格式纪律已禁用「文件:行」）：单独扫、单独报（每个文件一条）
+$lineRefTotal = 0
+foreach ($f in $refFiles) {
+    $t = Read-Text $f.FullName
+    $rel = Get-RelPath $f.FullName
+    $hits = @([regex]::Matches($t, '`([^`\s]+\.md):\d+(?:-\d+)?`'))
+    if ($hits.Count -gt 0) {
+        $lineRefTotal += $hits.Count
+        $shown = (@($hits | Select-Object -First 3 | ForEach-Object { $_.Value }) -join '、')
+        Write-Warn2 ("{0} 有 {1} 处行号引用（{2}）—— 行号会漂；改成「文件.md + 小节标题」或「§编号」" -f $rel, $hits.Count, $shown)
+    }
+}
+$lineRefNote = if ($lineRefTotal -gt 0) { ("；另有 {0} 处行号引用（见上）" -f $lineRefTotal) } else { '' }
+
 if ($refFiles.Count -eq 0) { Write-Warn2 '没有可扫描的记忆文件' }
-elseif ($refTotal -eq 0) { Write-Ok '没有「文件 + 锚点」形式的引用（本项无需校验）' }
-elseif ($refBad -eq 0) { Write-Ok ("{0} 处引用全部可定位（另有 {1} 处否定语境、{2} 处锚点只命中正文）" -f $refTotal, $refSkip, $refBody) }
-else { Write-Note ("共扫描 {0} 处引用：失败 {1}，否定语境 {2}，锚点降级 {3}" -f $refTotal, $refBad, $refSkip, $refBody) }
+elseif ($refTotal -eq 0) { Write-Ok ('没有「文件 + 锚点」形式的引用（本项无需校验）' + $lineRefNote) }
+elseif ($refBad -eq 0) { Write-Ok ("{0} 处引用全部可定位（另有 {1} 处否定语境、{2} 处锚点只命中正文）{3}" -f $refTotal, $refSkip, $refBody, $lineRefNote) }
+else { Write-Note ("共扫描 {0} 处引用：失败 {1}，否定语境 {2}，锚点降级 {3}{4}" -f $refTotal, $refBad, $refSkip, $refBody, $lineRefNote) }
 
 # ---------- ⑥ 忽略规则：过宽规则 + 记忆是否真的被忽略 ----------
 Write-Head 6 '忽略规则：过宽规则 / 记忆与入口是否真的被忽略'
