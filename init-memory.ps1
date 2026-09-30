@@ -41,6 +41,11 @@
 .PARAMETER IgnoreTarget
     忽略规则写到哪里：`gitignore`（默认）/ `exclude` / `none`。见上文说明。
 
+.PARAMETER IgnoreSkills
+    额外把 `/.agents/skills/` 也写进忽略规则，并把理由写成注释（「仓库级 Skill 有意不入库，
+    要共享就删这行或加 `!` 例外」）。第三方 Skill 包（带各自 LICENSE）不随仓库分发时用它。
+    注意：它会让仓库级 Skill 一直不入库 —— 想共享时删掉那一行即可。
+
 .PARAMETER List
     只预览将要发生的变更，不写任何文件。
 
@@ -64,6 +69,7 @@ param(
     [string]$Project,
     [ValidateSet('gitignore', 'exclude', 'none')]
     [string]$IgnoreTarget = 'gitignore',
+    [switch]$IgnoreSkills,
     [switch]$List,
     [switch]$Force
 )
@@ -74,6 +80,8 @@ $TemplateRoot = Join-Path $PSScriptRoot 'memory-template'
 
 # 当前推荐的忽略规则（精确到 memory/，不动 .agents/skills/）
 $IgnoreLines = @('/AGENTS.md', '.agents/memory/', '.clineignore')
+# -IgnoreSkills：把仓库级 Skill 也写进忽略（第三方 Skill 包不随仓库分发时用）
+if ($IgnoreSkills) { $IgnoreLines += '.agents/skills/' }
 # 早期版本写过、或用户手写的「过宽」规则：会把 .agents/skills/ 一起忽略掉
 $OverBroadIgnore = @('.agents', '.agents/', '/.agents', '/.agents/')
 
@@ -238,13 +246,18 @@ else {
         if (-not $List -and $PSCmdlet.ShouldProcess($targetFile, '追加忽略规则')) {
             $dir = Split-Path -Parent $targetFile
             if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-            if ($IgnoreTarget -eq 'exclude') {
-                $block = "`n# ── 本机 AI 约定（仅本机生效，永不入库；换机器需各自重配） ──`n" + ($missing -join "`n") + "`n"
+            $head = if ($IgnoreTarget -eq 'exclude') {
+                '# ── 本机 AI 约定（仅本机生效，永不入库；换机器需各自重配） ──'
             }
             else {
-                $block = "`n# ── 本机 AI 约定（不入库；两个 agent 仍可读到） ──`n" + ($missing -join "`n") + "`n"
+                '# ── 本机 AI 约定（不入库；两个 agent 仍可读到） ──'
             }
-            [IO.File]::AppendAllText($targetFile, $block, [Text.UTF8Encoding]::new($false))
+            $lines = @($head)
+            if ($IgnoreSkills) {
+                $lines += '# 仓库级 Skill（.agents/skills/）有意不入库（第三方包 / 各自 LICENSE）；要共享就删这行或加 ! 例外'
+            }
+            $lines += $missing
+            [IO.File]::AppendAllText($targetFile, ("`n" + ($lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
         }
     }
 }

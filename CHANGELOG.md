@@ -4,6 +4,34 @@
 机器可读标记里（`<!-- memory-skeleton: v1.1 -->`）；初始化到项目后，`init-memory.ps1` 与
 `check-memory.ps1` 会提示「目标骨架 vs 当前模板」的版本差，是否合并由你决定（脚本不自动改记忆）。
 
+## [1.1.3] - 2026-09-30
+
+### 新增
+
+- `init-memory.ps1 -IgnoreSkills`：额外把 `.agents/skills/` 写进忽略，并附一行理由注释
+  （「仓库级 Skill 有意不入库；要共享就删这行或加 `!` 例外」）。
+- `check-memory.ps1 -Strict` 增两条门槛：「存在 `memory-check:` 门槛覆盖」与「骨架版本落后于模板」
+  也算失败；门槛覆盖**没写理由**（注释块里只剩 `key=value`）→ WARN。
+- 引用**显式失效标注**：行内写 `[已失效]` 的引用只提示、不算失败（词表只作兜底）。
+
+### 变更
+
+- **检查项清单改为单一来源**：`check-memory.ps1` 头部注释是唯一清单，
+  `README.md` 与 `memory-hygiene` 改为速览 / 引用（此前一次改动要同步五处）。
+- ⑥ 的忽略规则识别接受前导斜杠写法（`/.agents/memory/`）—— kit 自身要用它。
+- ⑨ 在 **kit 自身的仓库**里跳过（kit 的文档本来就要解释 `.agents/memory` / `docs/_local` 这些路径）。
+
+### kit 自身（dogfooding）
+
+- kit 开始用它自己的骨架：新增 `AGENTS.md` + `.agents/memory/{knowledge,status}`
+  （维护约定 / 验收矩阵 / 进度），`.gitignore` 加 `/AGENTS.md` 与 `/.agents/memory/` ——
+  于是 `check-memory.ps1 -Path .` 从「exit 2：没有骨架」变成可体检。
+
+### 文档
+
+- `README.md`：检查表精简为分组速览并指向脚本头部；忽略规则一节补 `-IgnoreSkills`；退出码补 `-Strict` 两条。
+- `TUTORIAL.md`：忽略规则一节与命令卡补 `-IgnoreSkills`。
+
 ## [1.1.2] - 2026-09-30
 
 ### 新增

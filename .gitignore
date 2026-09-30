@@ -23,8 +23,13 @@ secrets.*
 # 别人用了这个 kit 之后产生的运行时副本
 .installed-by-agent-memory-kit
 
+# kit 自己的本机 AI 约定（与它教用户的形态一致：**必须带前导斜杠**，只匹配根级）
+/AGENTS.md
+/.agents/memory/
+
 # git提交信息
 git-commit-msg.txt
 
-# ⚠️ 不要在这里加 .agents —— memory-template/.agents/ 是骨架本体，
-#    被忽略后会提交不进仓库，clone 下来的人拿到的是残缺模板。
+# ⚠️ 不要在这里加**不带斜杠**的 `.agents` / `.agents/memory` —— 那会连 memory-template/.agents/memory/
+#    一起忽略，骨架本体就提交不进仓库，clone 下来的人拿到的是残缺模板（历史上真的发生过）。
+#    要忽略 kit 自己的记忆请用上面的 `/.agents/memory/`（前导斜杠 = 只匹配根级）。

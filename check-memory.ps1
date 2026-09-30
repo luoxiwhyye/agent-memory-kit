@@ -15,6 +15,17 @@
 
     退出码：0 = 无错误（可能有警告）；1 = 有错误；2 = 没找到记忆骨架。
 
+    检查项（**这份清单是唯一来源**；README / SKILL / CHANGELOG 只做速览与引用）：
+      ① 索引表 ↔ knowledge/ · status/ 一对一
+      ② AGENTS.md 行数上限（-MaxAgentsLines / memory-check: max-agents-lines=N）
+      ③ 非 BMP 字符（只扫记忆文件）
+      ④ status/ 新鲜度与形态（-StaleDays / -MaxStatusLines / memory-check: stale-days|max-status-lines）
+      ⑤ 悬空引用（文件 + 小节锚点，不看行号）＋「行号引用」告警
+      ⑥ 忽略规则：过宽规则 / 记忆与入口是否真的被忽略
+      ⑦ 仓库级 Skill（.agents/skills/）的入库状态
+      ⑧ 备份（-Backup，唯一的写操作；快照进 .agents/memory/.backup/）
+      ⑨ 入库文件不得引用本机专属目录（在 kit 自身的仓库里跳过）
+
 .PARAMETER Path
     目标项目根目录。默认当前目录。
 
@@ -166,18 +177,39 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 }
 
 # 项目级门槛覆盖：AGENTS.md 里写 <!-- memory-check: max-agents-lines=130 -->（可选，也可写 stale-days=N）
+# 门槛覆盖是否写了理由（同一处 memory-check 注释块里、key=value 之外还有内容）
+function Test-OverrideHasReason($text, $name) {
+    $m = [regex]::Match($text, ('memory-check:\s*' + [regex]::Escape($name) + '\s*=\s*\d+'))
+    if (-not $m.Success) { return $true }
+    $tail = $text.Substring($m.Index, [Math]::Min(400, $text.Length - $m.Index))
+    $end = $tail.IndexOf('-->')
+    if ($end -ge 0) { $tail = $tail.Substring(0, $end) }
+    $rest = $tail -replace 'memory-check:', '' -replace '(max-agents-lines|stale-days|max-status-lines)\s*=\s*\d+', '' -replace '<!--', ''
+    return ($rest.Trim() -ne '')
+}
+
 $effMaxLines = $MaxAgentsLines
 $effStaleDays = $StaleDays
 $effMaxStatusLines = $MaxStatusLines
 $overridden = @()
+$overrideNoReason = @()
 if ($hasAgents) {
     $agentsHead = Read-Text $AgentsPath
     $mo = [regex]::Match($agentsHead, 'memory-check:\s*max-agents-lines\s*=\s*(\d+)')
-    if ($mo.Success) { $effMaxLines = [int]$mo.Groups[1].Value; $overridden += ("max-agents-lines={0}" -f $effMaxLines) }
+    if ($mo.Success) {
+        $effMaxLines = [int]$mo.Groups[1].Value; $overridden += ("max-agents-lines={0}" -f $effMaxLines)
+        if (-not (Test-OverrideHasReason $agentsHead 'max-agents-lines')) { $overrideNoReason += 'max-agents-lines' }
+    }
     $mo2 = [regex]::Match($agentsHead, 'memory-check:\s*stale-days\s*=\s*(\d+)')
-    if ($mo2.Success) { $effStaleDays = [int]$mo2.Groups[1].Value; $overridden += ("stale-days={0}" -f $effStaleDays) }
+    if ($mo2.Success) {
+        $effStaleDays = [int]$mo2.Groups[1].Value; $overridden += ("stale-days={0}" -f $effStaleDays)
+        if (-not (Test-OverrideHasReason $agentsHead 'stale-days')) { $overrideNoReason += 'stale-days' }
+    }
     $mo3 = [regex]::Match($agentsHead, 'memory-check:\s*max-status-lines\s*=\s*(\d+)')
-    if ($mo3.Success) { $effMaxStatusLines = [int]$mo3.Groups[1].Value; $overridden += ("max-status-lines={0}" -f $effMaxStatusLines) }
+    if ($mo3.Success) {
+        $effMaxStatusLines = [int]$mo3.Groups[1].Value; $overridden += ("max-status-lines={0}" -f $effMaxStatusLines)
+        if (-not (Test-OverrideHasReason $agentsHead 'max-status-lines')) { $overrideNoReason += 'max-status-lines' }
+    }
 }
 $overrideNote = if ($overridden.Count -gt 0) { ("（项目自定：" + ($overridden -join '、') + "）") } else { '' }
 
@@ -307,6 +339,9 @@ else {
         Write-Warn2 ("AGENTS.md {0} 行 > 建议的 {1} 行 —— 细则推到 knowledge/ 子文件，入口只留一行摘要；若项目有意放宽，用 -MaxAgentsLines 或文件里的 <!-- memory-check: max-agents-lines=N --> 上调门槛" -f $lineCount, $effMaxLines)
     }
     else { Write-Ok ("AGENTS.md {0} 行（上限 {1}）" -f $lineCount, $effMaxLines) }
+    if ($overrideNoReason.Count -gt 0) {
+        Write-Warn2 ("放宽门槛要写理由（当前没写：{0}）—— 门槛与理由都留在项目自己的记忆里，别悄悄超标" -f ($overrideNoReason -join '、'))
+    }
 }
 
 # ---------- ③ 非 BMP 字符 ----------
@@ -467,7 +502,11 @@ foreach ($f in $refFiles) {
         }
         if (-not $found) {
             $line = Get-LineAt $t $m.Index
-            if ($line -match '不存在|已删|删除|删掉|已移除|不再引用|已废弃|已作废|弃用|已不成立') {
+            if ($line -match '\[已失效\]|（已失效）|\(已失效\)') {
+                $refSkip++
+                Write-Note ("{0} -> {1}：行内标注了「已失效」（不计失败；这是首选写法）" -f $rel, ('`' + $ref + '`'))
+            }
+            elseif ($line -match '不存在|已删|删除|删掉|已移除|不再引用|已废弃|已作废|弃用|已不成立') {
                 $refSkip++
                 Write-Note ("{0} -> {1}：出现在「否定语境」里（已记录的失效，不计失败）" -f $rel, ('`' + $ref + '`'))
             }
@@ -512,8 +551,8 @@ $lineRefNote = if ($lineRefTotal -gt 0) { ("；另有 {0} 处行号引用（见�
 
 if ($refFiles.Count -eq 0) { Write-Warn2 '没有可扫描的记忆文件' }
 elseif ($refTotal -eq 0) { Write-Ok ('没有「文件 + 锚点」形式的引用（本项无需校验）' + $lineRefNote) }
-elseif ($refBad -eq 0) { Write-Ok ("{0} 处引用全部可定位（另有 {1} 处否定语境、{2} 处锚点只命中正文）{3}" -f $refTotal, $refSkip, $refBody, $lineRefNote) }
-else { Write-Note ("共扫描 {0} 处引用：失败 {1}，否定语境 {2}，锚点降级 {3}{4}" -f $refTotal, $refBad, $refSkip, $refBody, $lineRefNote) }
+elseif ($refBad -eq 0) { Write-Ok ("{0} 处引用全部可定位（另有 {1} 处已记录的失效、{2} 处锚点只命中正文）{3}" -f $refTotal, $refSkip, $refBody, $lineRefNote) }
+else { Write-Note ("共扫描 {0} 处引用：失败 {1}，已记录的失效 {2}，锚点降级 {3}{4}" -f $refTotal, $refBad, $refSkip, $refBody, $lineRefNote) }
 
 # ---------- ⑥ 忽略规则：过宽规则 + 记忆是否真的被忽略 ----------
 Write-Head 6 '忽略规则：过宽规则 / 记忆与入口是否真的被忽略'
@@ -537,8 +576,8 @@ else {
             $v = $line.Trim()
             if ($v -eq '' -or $v.StartsWith('#')) { continue }
             if ($OverBroad -contains $v) { $wide += ("{0}:{1}  {2}" -f (Get-RelPath $file), $ln, $v) }
-            if (($v -eq '.agents/memory' -or $v -eq '.agents/memory/') -and -not $memoryRule) { $memoryRule = ("{0}:{1}" -f (Get-RelPath $file), $ln) }
-            if (($v -eq 'AGENTS.md' -or $v -eq '/AGENTS.md') -and -not $agentsRule) { $agentsRule = ("{0}:{1}" -f (Get-RelPath $file), $ln) }
+            if (($v -match '^/?\.agents/memory/?$') -and -not $memoryRule) { $memoryRule = ("{0}:{1}" -f (Get-RelPath $file), $ln) }
+            if (($v -match '^/?AGENTS\.md$') -and -not $agentsRule) { $agentsRule = ("{0}:{1}" -f (Get-RelPath $file), $ln) }
         }
     }
     foreach ($w in $wide) {
@@ -590,7 +629,10 @@ else { Write-Ok $backupResult }
 
 # ---------- ⑨ 入库文件不得引用本机文档 ----------
 Write-Head 9 '入库文件不得引用本机文档（远程读者看不到本机记忆 / 私有目录）'
-if (-not $gitOk) { Write-Warn2 '不是 git 仓库或找不到 git —— 跳过' }
+if ($TargetRoot -eq $PSScriptRoot) {
+    Write-Ok '这是 kit 自身的仓库 —— 跳过（kit 的文档本来就要解释 .agents/memory / docs/_local 这些路径）'
+}
+elseif (-not $gitOk) { Write-Warn2 '不是 git 仓库或找不到 git —— 跳过' }
 else {
     $docs = @(& git -C $TargetRoot ls-files -- '*.md' 2>$null |
         Where-Object { $_ -and $_ -notmatch '(^|/)(node_modules|dist|build|\.git)/' -and $_ -ne 'AGENTS.md' -and $_ -notmatch '^\.agents/' })
@@ -612,6 +654,21 @@ else {
     }
     if ($hits -eq 0) { Write-Ok ("扫描 {0} 个入库 markdown：没有引用本机记忆 / 私有目录 / 本机绝对路径" -f $scanned) }
     else { Write-Note '这些引用对远程读者是死链或隐私泄漏 —— 要么写进入库文档，要么去掉本机专属内容' }
+}
+
+# ---------- 额外门槛（仅 -Strict）：把「有意放宽」与「版本落后」也算失败 ----------
+if ($Strict) {
+    Write-Host ''
+    Write-Host '[严] 额外门槛（-Strict）' -ForegroundColor Cyan
+    if ($overridden.Count -gt 0) {
+        Write-Fail ("项目覆盖了 {0} 项门槛：{1} —— 请复核理由仍成立" -f $overridden.Count, ($overridden -join '、'))
+    }
+    if ($dstVer -and $tplVer -and $dstVer -ne $tplVer) {
+        Write-Fail ("骨架版本落后：目标 {0} vs 模板 {1}（迁移动作见 CHANGELOG.md 的「骨架」节）" -f $dstVer, $tplVer)
+    }
+    if ($overridden.Count -eq 0 -and -not ($dstVer -and $tplVer -and $dstVer -ne $tplVer)) {
+        Write-Ok '没有门槛覆盖，骨架版本与模板一致'
+    }
 }
 
 # ---------- 汇总 ----------

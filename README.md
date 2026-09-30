@@ -131,6 +131,9 @@ pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -Project MyApp
 pwsh -File <kit路径>/init-memory.ps1 -Path D:\code\MyApp -IgnoreTarget exclude
 ```
 
+想让**仓库级 Skill 也不入库**（第三方 Skill 包、各自带 LICENSE 时常见）：加 `-IgnoreSkills` ——
+它会把 `.agents/skills/` 写进忽略，并附一行理由注释（以后要共享，删掉那行即可）。
+
 它们是**本机 AI 约定**，通常不该出现在给别人 clone 的公共仓库里。而两个 agent 读它们走的是
 **文件读取，不受忽略规则影响**（已核实 Cline 的规则路径是显式拼出来的）。
 
@@ -189,28 +192,31 @@ pwsh -File <kit路径>/check-memory.ps1 -Backup                 # 整理前先�
 pwsh -File <kit路径>/check-memory.ps1 -Strict                 # 有警告也算失败（收尾 / CI）
 ```
 
-| 检查 | 说明 |
+**检查项清单的唯一来源是 `check-memory.ps1` 头部注释**（下面是速览；要改检查项请先改那里）：
+
+| 组 | 检查 |
 | :--- | :--- |
-| ① 索引表 ↔ `knowledge/` | 必须一对一（指向不存在的文件 = 下次读到空） |
-| ② `AGENTS.md` 行数 | 超过建议值（默认 100）告警；`-MaxAgentsLines` 可上调 |
-| ③ 非 BMP 字符 | 只扫记忆文件（长会话被截断会留下孤立代理） |
-| ④ `status/` 新鲜度与形态 | 超过 `-StaleDays`（默认 7）天；`状态: 已闭环` 未清理；或「更像日志」（行数 > `-MaxStatusLines`、不同日期 > 3、✅ 行占比 > 20%） |
-| ⑤ 悬空引用 | **按「文件 + 小节锚点」校验，不看行号**；只查**反引号内**的引用；`文件:行` 形态单独报 WARN |
-| ⑥ 忽略规则 | 过宽规则（裸 `.agents`），以及记忆 / 入口是否真的被忽略 |
-| ⑦ 仓库级 Skill | `.agents/skills/` 有文件、但 `git ls-files` 为空 → 静默未入库（被显式规则点名的忽略算「有意」，只提示） |
-| ⑧ 备份 | `-Backup` 快照到 `.agents/memory/.backup/`（天然被忽略），`-KeepBackups` 控制保留份数；项目另有文档快照 / 镜像脚本时记得排除该目录（`.backup/_SKIP_ME.txt` 就是给这类工具看的） |
-| ⑨ 入库文件 | 不得引用 `.agents/memory/`、`docs/_local/` 这类**本机专属**目录 |
+| 结构与体量 | ① 索引表 ↔ `knowledge/` · `status/` 一对一；② `AGENTS.md` 行数上限 |
+| 内容卫生 | ③ 非 BMP 字符；④ `status/` 新鲜度与形态（过期 / `状态: 已闭环` / 「更像日志」） |
+| 引用 | ⑤ 悬空引用（**文件 + 小节锚点，不看行号**；只查反引号内；`文件:行` 报 WARN；行内 `[已失效]` 按标注处理） |
+| 环境与入库 | ⑥ 忽略规则（过宽 / 记忆与入口是否真被忽略）；⑦ 仓库级 Skill 入库状态；⑧ `-Backup` 快照；⑨ 入库文件不得引用本机专属目录（在 kit 自身仓库里跳过） |
 
 退出码：`0` 无错误 / `1` 有错误（`-Strict` 时警告也算）/ `2` 没找到记忆骨架。
+`-Strict` 下另外两条也算失败：**存在 `memory-check:` 门槛覆盖**、**骨架版本落后于模板**。
 它只做**机械可判定**的检查；「内容对不对、该不该写」仍归 `memory-hygiene`。
 
-**项目可以自己放宽门槛**（写在自己的 `AGENTS.md` 里，检查器会读；命令行参数仍可临时覆盖）：
+**项目可以自己放宽门槛**（写在自己的 `AGENTS.md` 里，检查器会读；命令行参数仍可临时覆盖）。
+**理由要写在同一个注释块里** —— 只有 `key=value` 而没写理由会被判 WARN：
 
 ```markdown
-<!-- memory-check: max-agents-lines=130 -->   <!-- 入口确实需要更长时用，并写明理由 -->
-<!-- memory-check: stale-days=14 -->          <!-- 放宽 status 的过期阈值 -->
-<!-- memory-check: max-status-lines=120 -->   <!-- status 体量阈值（0 = 关闭形态检查） -->
+<!-- memory-check: max-agents-lines=130
+     入口确实需要更长：§1 表是唯一的结构索引，压到 100 行会丢掉定位信息 -->
+<!-- memory-check: stale-days=14
+     status 只在发版前更新，14 天更贴近实际节奏 -->
+<!-- memory-check: max-status-lines=120
+     status 天然偏长（运维台账），120 行是这台机器实测的合理线 -->
 ```
+（`max-status-lines=0` = 关闭 status 的形态检查。）
 
 > **多项目不冲突**：`init-memory.ps1` 只写目标项目内部，所以对多少个项目分别执行都互不影响；
 > 唯一共享的是运行时 Skill 目录，而它现在有来源保护。详见 [`TUTORIAL.md`](TUTORIAL.md) 第 3 节。

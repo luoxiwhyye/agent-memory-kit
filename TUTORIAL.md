@@ -184,6 +184,11 @@ pwsh -File <kit路径>\init-memory.ps1 -Path . -IgnoreTarget exclude
 # 已经用默认模式初始化过、现在想改成 exclude：把那几行从 .gitignore 移到 .git/info/exclude
 ```
 
+**想让仓库级 Skill（`.agents/skills/`）也不入库**（第三方 Skill 包）：
+```powershell
+pwsh -File <kit路径>\init-memory.ps1 -Path . -IgnoreSkills
+```
+
 > 注意 `.agents/memory/` 是**精确**的：`<项目>/.agents/skills/`（仓库级 Skill）
 > **不会被忽略**，可以正常入库与团队共享。
 
@@ -493,6 +498,7 @@ pwsh -File <kit>\init-memory.ps1 -Project <项目名> -List   # 预览
 pwsh -File <kit>\init-memory.ps1 -Project <项目名>         # 搭骨架
 pwsh -File <kit>\init-memory.ps1 -Force                    # 重置（先备份为 *.bak-<时间戳>）
 pwsh -File <kit>\init-memory.ps1 -IgnoreTarget exclude     # 规则写进 .git/info/exclude（不在仓库留痕）
+pwsh -File <kit>\init-memory.ps1 -IgnoreSkills             # 连 .agents/skills/ 一起忽略（第三方 Skill 包）
 
 # ── 想改动 kit 本身时 ──────────────────────────────
 # 改了 skills/ 里的内容 → 重跑 install.ps1 并重载窗口
