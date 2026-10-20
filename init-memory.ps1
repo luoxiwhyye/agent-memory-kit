@@ -46,6 +46,10 @@
     要共享就删这行或加 `!` 例外」）。第三方 Skill 包（带各自 LICENSE）不随仓库分发时用它。
     注意：它会让仓库级 Skill 一直不入库 —— 想共享时删掉那一行即可。
 
+.PARAMETER WithDeploy
+    额外生成 `.agents/memory/knowledge/deploy.md`（部署 / 回滚 / 配置来源）并提示你在
+    AGENTS.md 索引表补一行。**默认不生成** —— 没上线的项目不需要「发布 / 回滚」占位文件。
+
 .PARAMETER List
     只预览将要发生的变更，不写任何文件。
 
@@ -59,6 +63,7 @@
     pwsh -File init-memory.ps1 -IgnoreTarget exclude    # 规则只留本机，不入库
     pwsh -File init-memory.ps1 -List
     pwsh -File init-memory.ps1 -Force
+    pwsh -File init-memory.ps1 -WithDeploy    # 需要部署 / 回滚记忆时
 
 .NOTES
     ⚠️ 本脚本**不会** git add / commit。是否把 .gitignore 的改动提交由你自己决定。
@@ -70,6 +75,7 @@ param(
     [ValidateSet('gitignore', 'exclude', 'none')]
     [string]$IgnoreTarget = 'gitignore',
     [switch]$IgnoreSkills,
+    [switch]$WithDeploy,
     [switch]$List,
     [switch]$Force
 )
@@ -147,6 +153,8 @@ $overwritten = @()
 
 foreach ($f in $files) {
     $rel = $f.FullName.Substring($TemplateRoot.Length).TrimStart('\', '/')
+    # deploy.md 只在 -WithDeploy 时生成（未上线的项目不需要「发布 / 回滚」占位文件）
+    if (-not $WithDeploy -and $rel -eq '.agents\memory\knowledge\deploy.md') { continue }
     $dst = Join-Path $TargetRoot $rel
     $text = ([IO.File]::ReadAllText($f.FullName)).Replace('{{PROJECT}}', $Project)
 
@@ -295,6 +303,9 @@ if ($tplVersion -and (Test-Path -LiteralPath $dstAgents)) {
 
 # ---------- 汇总 ----------
 Write-Host ''
+if (-not $WithDeploy -and (Test-Path -LiteralPath (Join-Path $TemplateRoot '.agents\memory\knowledge\deploy.md'))) {
+    Write-Host '  ℹ️ 未生成 knowledge/deploy.md（默认不启用部署记忆）；要上线时加 -WithDeploy 再跑，并在 AGENTS.md 索引表补一行。' -ForegroundColor DarkGray
+}
 if ($List) {
     $extra = ''
     if ($Force -and $overwritten.Count -gt 0) { $extra = "；-Force 将覆盖 $($overwritten.Count) 个（先备份）" }

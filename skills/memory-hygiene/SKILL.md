@@ -61,6 +61,8 @@ description: 维护项目的「AI 记忆体系」（AGENTS.md + .agents/memory/�
   引用请**用反引号把文件名包起来**（`` `pitfalls.md` ``）—— 只有这样 `check-memory` 才看得见它。
 - **引用一个已经失效/被删掉的东西时，在那一行写 `[已失效]`**（例：`` `旧文件.md` [已失效] —— 已并入 X``）。
   `check-memory` **优先信这个标注**（只提示、不算失败），不用它去猜「不存在 / 已删」这类词。
+- **代码路径也用反引号写，并且只写当前存在的**：`check-memory` 会验证 `src/ scripts/ pages/ components/ utils/ api/ config/`
+  等前缀的路径（两级基址：仓库根 → `src/`）。已删路径不要留在当前规则里 —— 历史进 `log.md`，确需引用旧路径就标 `[已失效]`。
 
 ## 四、生命周期：升级与回收（这是防腐的关键）
 
@@ -95,8 +97,9 @@ description: 维护项目的「AI 记忆体系」（AGENTS.md + .agents/memory/�
 0. 跑一次 `check-memory`（kit 自带）：
    `pwsh -File <kit路径>/check-memory.ps1 -Path <项目路径>`。
    它只做**机械可判定**的检查 —— **完整清单见 `check-memory.ps1` 头部注释**（那份是唯一来源），
-   速览：索引一对一 / 入口行数 / 非 BMP / `status/` 新鲜度与形态 / 悬空引用 + 行号引用 /
-   忽略规则 / 仓库级 Skill 入库状态 / 备份 / 入库文件引用本机目录。
+   速览：索引一对一 / 入口行数 / 非 BMP / `status/` 新鲜度与形态 / 悬空引用 + 行号引用 + 仓库路径存在性 /
+   忽略规则 / 仓库级 Skill 入库状态 / 备份 / 入库文件引用本机目录 /
+   knowledge 变更史密度 / knowledge 待办 / 空壳子文件 / 备份时效（默认关闭）。
    **先清零 FAIL 再谈整理**；整理前加 `-Backup` 先落一份快照（写进记忆目录下的 `.backup/`，天然被忽略）。
 
 **新增条目时**

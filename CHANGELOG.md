@@ -4,6 +4,48 @@
 机器可读标记里（`<!-- memory-skeleton: v1.1 -->`）；初始化到项目后，`init-memory.ps1` 与
 `check-memory.ps1` 会提示「目标骨架 vs 当前模板」的版本差，是否合并由你决定（脚本不自动改记忆）。
 
+## [1.1.4] - 2026-10-20
+
+### 新增（`check-memory.ps1`）
+
+- **⑤ 扩「仓库路径存在性」**：扫反引号内 `src/ scripts/ pages/ components/ utils/ api/ config/ share-documents/ documents/`
+  的 token，**两级基址**（仓库根 → `src/`）+ 候选解析（剥 `()` / `.方法` / 补 `.ts|.js|.vue`）；
+  跳过 `log.md`、fenced code、占位符、目录 token、`[已失效]` 与否定语境。缺文件 → WARN。
+- **⑩ knowledge 变更史密度**：日期 > 6 或**非豁免**哈希 > 3 → WARN；含「已作废 / 已被 … 取代 / 不再适用」的行不计哈希。
+  覆盖：`memory-check: max-dates|max-hashes=N`（**`-Strict` 下覆盖仍算失败**）。
+- **⑪ knowledge 待办**：剥掉行内代码后，只认「标题行」或「bullet 行首」的 `待确认/仍待/待办/未定/TODO/FIXME`。
+- **⑫ 空壳子文件 / 空小节**：去掉 HTML 注释后无实质内容 → WARN；**硬排除 `memory-template/`**，
+  「只剩 `- ` 的 bullet」按空处理。
+- **⑬ 备份时效**：`-BackupMaxAgeDays N`（**默认 0 = 关闭**）；>0 时无快照 / 快照过旧且记忆更新过 → WARN。
+- **④** 命中「更像日志」时额外打印「该搬去 `log.md` 的段落」（≤8 条），计数语义不变。
+- 检查项从 9 项扩到 **13 项**（`Write-Head` 分母同步改为 `/13`）。
+
+### 变更（`init-memory.ps1` / 骨架 v1.2）
+
+- **`deploy.md` 默认不生成**：未上线项目不再有「发布 / 回滚」占位文件；需要时 `-WithDeploy`
+  （同时提示在 AGENTS 索引表补一行）。模板 `AGENTS.md` 的 deploy 索引行同步删除。
+- `status/ops.md` 模板固定为 **当前下一步 / 阻塞 · 待定 / 环境现状 / 更新时间**。
+- `memory-template/knowledge/pitfalls.md`：删掉空小节与填写指引，只留 3 个带真实示例的小节。
+
+### 骨架迁移动作（v1.1 → v1.2）
+
+1. `AGENTS.md`：首行标记改 `v1.2`；索引表删 `deploy.md` 行（不用的子文件连行一起删）。
+2. `knowledge/deploy.md`：没上线就删；要保留就照旧（不强制）。
+3. `knowledge/pitfalls.md`：删空小节与「填写指引」注释，每个保留小节至少 1 条真实内容。
+4. `status/ops.md`：并成「当前下一步 / 阻塞 · 待定 / 环境现状 / 更新时间」，历史搬 `knowledge/log.md`。
+5. 跑 `check-memory.ps1 -Path <项目>`：⑩⑪⑫ 可能第一次报 WARN，按提示清理即可（都只是 WARN）。
+
+### 升级提示
+
+- **升级后可能新增 WARN**（全是新增项，不改既有 FAIL 语义）：老项目的 `knowledge/` 里若有日期 /
+  提交号 / 待办 / 空壳文件会第一次被点名；`⑬` 默认关闭，不会因「从未备份」告警。
+
+### 文档
+
+- `README.md`：检查表补 ⑤ 路径、⑩⑪⑫、⑬；覆盖示例补 `max-dates` / `max-hashes`。
+- `TUTORIAL.md`：排错速查 +3；新增「工作区根必须是仓库根」。
+- `skills/memory-hygiene/SKILL.md`：检查项速览更新；补「引用路径也用反引号」与「status 膨胀 → 搬 log 的 3 步」。
+
 ## [1.1.3] - 2026-09-30
 
 ### 新增

@@ -480,8 +480,16 @@ git check-ignore -v .agents/memory/status/ops.md   # 确认新位置被忽略
 | 改了 `skills/` 但 agent 行为没变                                | 忘了重跑 `install.ps1`                                      | 先 `install.ps1 -Check` 比哈希，再重跑 install                  |
 | `check-memory` 报 status「更像日志而不是此刻」（④）              | status 被当成日志用（体量大 / 多个日期 / 一堆 ✅）           | 明细搬 `knowledge/log.md`，status 只留「此刻 + 待办」；确实需要长就用 `memory-check: max-status-lines=N` |
 | `check-memory` 报「行号引用」（⑤）                              | 记忆里写了 `文件.md:123`                                    | 改成「文件 + 小节标题」或 `§编号`（行号一改就漂）              |
+| `check-memory` 报「引用路径不存在」（⑤ 路径）                    | 当前规则里写了已删的代码路径（已删页面 / 组件 / 脚本）      | 删掉该路径；历史写进 `log.md`（⑤ 跳过它）；确需保留的历史行标 `[已失效]` |
+| `check-memory` 报「写进了变更史」（⑩）                          | `knowledge/` 里堆了日期 / 提交号                            | 只留当前规则，演进与提交号搬 `knowledge/log.md`；确需放宽用 `memory-check: max-dates|max-hashes=N`（`-Strict` 下仍算失败） |
+| `check-memory` 报「像待办」（⑪）                                | `knowledge/` 里写了「待确认 / 仍待 / TODO」                 | 会过期的内容归 `status/` 或项目文档；结论写成规则              |
+| `check-memory` 报「空壳子文件 / 空小节」（⑫）                   | 建了没用的子文件，或删内容后留下空标题                      | 删文件 + 删索引行；空小节删掉或补一条真实内容                  |
 | `init-memory` 提示「骨架版本不同 / 没有版本标记」               | 模板升级了，或骨架是早期版本                                | 按 `CHANGELOG.md` 的「骨架」节 → **迁移动作**做（脚本不自动改记忆） |
 | `AGENTS.md`、`.agents/` 出现在 `git status` 里                  | 忽略规则没写 / 写在别处（`-IgnoreTarget none`、或换机器后）  | 跑 `init-memory.ps1` 补规则，或 `check-memory.ps1` 看第 ⑥ 项     |
+
+> ⚠️ **工作区根必须是仓库根**：`AGENTS.md` 只在「VS Code 打开的目录」这一层被自动加载。
+> 打开的是父目录（例如 `program-task/` 而不是 `task-mp/`）时，agent 读不到该项目的 `AGENTS.md`。
+> 多项目并列开发时，每个窗口直接打开对应项目；确实要开父目录，就在父目录放一个 3 行的 `AGENTS.md` 指针。
 
 ---
 

@@ -20,11 +20,17 @@
       ② AGENTS.md 行数上限（-MaxAgentsLines / memory-check: max-agents-lines=N）
       ③ 非 BMP 字符（只扫记忆文件）
       ④ status/ 新鲜度与形态（-StaleDays / -MaxStatusLines / memory-check: stale-days|max-status-lines）
+         命中形态时额外打印「该搬去 log.md 的段落」线索（只加提示，不改计数）
       ⑤ 悬空引用（文件 + 小节锚点，不看行号）＋「行号引用」告警
+         ＋ 反引号内仓库路径存在性（两级基址：仓库根 → src/；跳过 log.md / 占位符 / 否定语境）
       ⑥ 忽略规则：过宽规则 / 记忆与入口是否真的被忽略
       ⑦ 仓库级 Skill（.agents/skills/）的入库状态
       ⑧ 备份（-Backup，唯一的写操作；快照进 .agents/memory/.backup/）
       ⑨ 入库文件不得引用本机专属目录（在 kit 自身的仓库里跳过）
+      ⑩ knowledge/ 变更史密度（日期 > 6 / 非豁免哈希 > 3；覆盖：memory-check: max-dates|max-hashes）
+      ⑪ knowledge/ 里的待办（待确认 / 仍待 / 未定 / TODO / FIXME；只认标题与 bullet 行首）
+      ⑫ 空壳子文件 / 空小节（跳过 log.md、status/、memory-template/）
+      ⑬ 备份时效（**默认关闭**；-BackupMaxAgeDays N 才检查）
 
 .PARAMETER Path
     目标项目根目录。默认当前目录。
@@ -47,6 +53,10 @@
 
 .PARAMETER KeepBackups
     保留最近几份快照（默认 5），更旧的删掉。只在 `-Backup` 时生效。
+
+.PARAMETER BackupMaxAgeDays
+    备份时效阈值（天）。**默认 0 = 关闭**（老项目升级后不会因「从未备份」成片新增 WARN）。
+    >0 时：无快照 → WARN；最新快照距今 > N 且存在比快照更新的记忆文件 → WARN「记忆改过但没快照」。
 
 .PARAMETER Strict
     把「警告」也当作失败（退出码 1）。默认警告不改变退出码。
@@ -71,6 +81,7 @@ param(
     [int]$MaxStatusLines = 80,
     [switch]$Backup,
     [int]$KeepBackups = 5,
+    [int]$BackupMaxAgeDays = 0,
     [switch]$Strict
 )
 
@@ -80,7 +91,7 @@ $Script:Fail = 0
 $Script:Warn = 0
 $Script:Ok = 0
 
-function Write-Head($n, $title) { Write-Host ''; Write-Host ("[{0}/9] {1}" -f $n, $title) -ForegroundColor Cyan }
+function Write-Head($n, $title) { Write-Host ''; Write-Host ("[{0}/13] {1}" -f $n, $title) -ForegroundColor Cyan }
 function Write-Ok($msg) { $Script:Ok++; Write-Host ("   OK    " + $msg) -ForegroundColor Green }
 function Write-Warn2($msg) { $Script:Warn++; Write-Host ("   WARN  " + $msg) -ForegroundColor Yellow }
 function Write-Fail($msg) { $Script:Fail++; Write-Host ("   FAIL  " + $msg) -ForegroundColor Red }
@@ -184,13 +195,15 @@ function Test-OverrideHasReason($text, $name) {
     $tail = $text.Substring($m.Index, [Math]::Min(400, $text.Length - $m.Index))
     $end = $tail.IndexOf('-->')
     if ($end -ge 0) { $tail = $tail.Substring(0, $end) }
-    $rest = $tail -replace 'memory-check:', '' -replace '(max-agents-lines|stale-days|max-status-lines)\s*=\s*\d+', '' -replace '<!--', ''
+    $rest = $tail -replace 'memory-check:', '' -replace '(max-agents-lines|stale-days|max-status-lines|max-dates|max-hashes)\s*=\s*\d+', '' -replace '<!--', ''
     return ($rest.Trim() -ne '')
 }
 
 $effMaxLines = $MaxAgentsLines
 $effStaleDays = $StaleDays
 $effMaxStatusLines = $MaxStatusLines
+$effMaxDates = 6
+$effMaxHashes = 3
 $overridden = @()
 $overrideNoReason = @()
 if ($hasAgents) {
@@ -210,11 +223,21 @@ if ($hasAgents) {
         $effMaxStatusLines = [int]$mo3.Groups[1].Value; $overridden += ("max-status-lines={0}" -f $effMaxStatusLines)
         if (-not (Test-OverrideHasReason $agentsHead 'max-status-lines')) { $overrideNoReason += 'max-status-lines' }
     }
+    $mo4 = [regex]::Match($agentsHead, 'memory-check:\s*max-dates\s*=\s*(\d+)')
+    if ($mo4.Success) {
+        $effMaxDates = [int]$mo4.Groups[1].Value; $overridden += ("max-dates={0}" -f $effMaxDates)
+        if (-not (Test-OverrideHasReason $agentsHead 'max-dates')) { $overrideNoReason += 'max-dates' }
+    }
+    $mo5 = [regex]::Match($agentsHead, 'memory-check:\s*max-hashes\s*=\s*(\d+)')
+    if ($mo5.Success) {
+        $effMaxHashes = [int]$mo5.Groups[1].Value; $overridden += ("max-hashes={0}" -f $effMaxHashes)
+        if (-not (Test-OverrideHasReason $agentsHead 'max-hashes')) { $overrideNoReason += 'max-hashes' }
+    }
 }
 $overrideNote = if ($overridden.Count -gt 0) { ("（项目自定：" + ($overridden -join '、') + "）") } else { '' }
 
 Write-Host ("check-memory（只读）   目标：{0}" -f $TargetRoot) -ForegroundColor White
-Write-Host ("  阈值：AGENTS.md <= {0} 行；status 过期 > {1} 天 / 体量 <= {2} 行；git = {3}{4}" -f $effMaxLines, $effStaleDays, $effMaxStatusLines, $(if ($gitOk) { '可用' } else { '不可用（跳过入库类检查）' }), $overrideNote) -ForegroundColor DarkGray
+Write-Host ("  阈值：AGENTS.md <= {0} 行；status 过期 > {1} 天 / 体量 <= {2} 行；knowledge 日期 <= {3} / 非豁免哈希 <= {4}；git = {5}{6}" -f $effMaxLines, $effStaleDays, $effMaxStatusLines, $effMaxDates, $effMaxHashes, $(if ($gitOk) { '可用' } else { '不可用（跳过入库类检查）' }), $overrideNote) -ForegroundColor DarkGray
 
 if (-not $hasAgents -and -not $hasMemory) {
     Write-Host ''
@@ -389,6 +412,23 @@ else {
             if ($rows.Count -ge 20 -and $doneRatio -gt 0.2) { $hits += ("{0}% 的行带已完成标记" -f [int]($doneRatio * 100)) }
             if ($hits.Count -gt 0) {
                 Write-Warn2 ("{0} 更像日志而不是「此刻」（{1}）—— status 只写此刻；明细搬 knowledge/log.md，这里只留指针" -f $rel, ($hits -join '、'))
+                Write-Note '建议搬到 knowledge/log.md 的段落（最多 8 条）：'
+                $sec = '（文件头）'
+                $stat = @{}
+                foreach ($ln in $rows) {
+                    if ($ln -match '^##\s+(.+)$') { $sec = $Matches[1].Trim(); continue }
+                    if ($ln -match '✅|✔|已完成|已交付|已闭环') {
+                        if (-not $stat.ContainsKey($sec)) { $stat[$sec] = 0 }
+                        $stat[$sec]++
+                    }
+                }
+                $shown = 0
+                foreach ($k in @($stat.Keys)) {
+                    if ($shown -ge 8) { break }
+                    Write-Note ("  - ## {0}（{1} 条已完成标记）" -f $k, $stat[$k])
+                    $shown++
+                }
+                if ($shown -eq 0) { Write-Note '  - 没有明显的已完成段落；先按「当前下一步 / 阻塞 / 环境现状」重写' }
             }
             else {
                 Write-Note ("{0} 体量正常（{1} 行 / {2} 个日期 / {3}% 已完成行）" -f $rel, $rows.Count, $dateCount, [int]($doneRatio * 100))
@@ -549,10 +589,88 @@ foreach ($f in $refFiles) {
 }
 $lineRefNote = if ($lineRefTotal -gt 0) { ("；另有 {0} 处行号引用（见上）" -f $lineRefTotal) } else { '' }
 
+# 反引号内的仓库路径存在性（两级基址：仓库根 → src/；占位符 / 否定语境 / 历史文件跳过）
+$pathPrefixes = @('src/', 'scripts/', 'pages/', 'components/', 'utils/', 'api/', 'config/', 'share-documents/', 'documents/')
+$kitOnlyPrefixes = @('memory-template/', 'skills/', '_local/')
+$srcRelPrefixes = @('pages/', 'components/', 'api/', 'utils/', 'config/')
+$isKitRepo = ($TargetRoot -eq $PSScriptRoot)
+$pathNeg = '\[已失效\]|不存在|已删|删除|已移除|不再引用|已作废|已废弃|弃用|已不成立'
+function Get-PathCandidates($token) {
+    $out = New-Object System.Collections.Generic.List[string]
+    $out.Add($token)
+    $base = $token -replace '\(.*\)$', ''
+    if ($base -ne $token) { $out.Add($base) }
+    $slash = $base.LastIndexOf('/')
+    $dot = $base.LastIndexOf('.')
+    if ($dot -gt $slash) {
+        $stem = $base.Substring(0, $dot)
+        $out.Add($stem)
+        foreach ($e in @('.ts', '.js', '.vue')) { $out.Add($stem + $e) }
+    }
+    foreach ($e in @('.ts', '.js', '.vue')) { $out.Add($base + $e) }
+    return $out
+}
+$pathTotal = 0
+$pathBadFiles = @{}
+foreach ($f in $refFiles) {
+    $t = Read-Text $f.FullName
+    $rel = Get-RelPath $f.FullName
+    if ($rel -match '\\knowledge\\log\.md$') { continue }
+    $inFence = $false
+    foreach ($line in ($t -split "`r?`n")) {
+        if ($line -match '^\s*```') { $inFence = -not $inFence; continue }
+        if ($inFence) { continue }
+        if ($line -match $pathNeg) { continue }
+        foreach ($m in [regex]::Matches($line, '`([^`\s]+)`')) {
+            $tok = $m.Groups[1].Value
+            if ($tok -match '\.md$') { continue }
+            $pfx = $null
+            foreach ($p in ($pathPrefixes + $kitOnlyPrefixes)) { if ($tok.StartsWith($p)) { $pfx = $p; break } }
+            if (-not $pfx) { continue }
+            if (($kitOnlyPrefixes -contains $pfx) -and -not $isKitRepo) { continue }
+            if ($tok -match '[*?<>{}|…=]') { continue }
+            if ($tok.EndsWith('/')) { continue }
+            $pathTotal++
+            $found = $false
+            foreach ($cand in (Get-PathCandidates $tok)) {
+                if (Test-Path -LiteralPath (Join-Path $TargetRoot $cand)) { $found = $true; break }
+                if ($srcRelPrefixes -contains $pfx) {
+                    if (Test-Path -LiteralPath (Join-Path (Join-Path $TargetRoot 'src') $cand)) { $found = $true; break }
+                }
+            }
+            if (-not $found) {
+                # monorepo / 多子项目布局：按「路径后缀」在仓库里找一次（myblog、IMS 这类项目）
+                $idx = Get-RepoIndex
+                foreach ($cand in (Get-PathCandidates $tok)) {
+                    $leaf = ($cand -split '/')[-1]
+                    $key = $leaf.ToLower()
+                    if (-not $idx.ContainsKey($key)) { continue }
+                    $norm = $cand.Replace('\', '/').ToLower()
+                    foreach ($p in @($idx[$key])) {
+                        if ($p.Replace('\', '/').ToLower().EndsWith($norm)) { $found = $true; break }
+                    }
+                    if ($found) { break }
+                }
+            }
+            if (-not $found) {
+                if (-not $pathBadFiles.ContainsKey($rel)) { $pathBadFiles[$rel] = @() }
+                $pathBadFiles[$rel] += ('`' + $tok + '`')
+            }
+        }
+    }
+}
+$pathBad = 0
+foreach ($k in @($pathBadFiles.Keys)) {
+    $items = @($pathBadFiles[$k])
+    $pathBad += $items.Count
+    Write-Warn2 ("{0}: 引用路径不存在：{1} —— 当前规则里不要提已删路径；历史请进 log.md" -f $k, (($items | Select-Object -First 5) -join '、'))
+    if ($items.Count -gt 5) { Write-Note ("  …另有 {0} 处" -f ($items.Count - 5)) }
+}
+
 if ($refFiles.Count -eq 0) { Write-Warn2 '没有可扫描的记忆文件' }
-elseif ($refTotal -eq 0) { Write-Ok ('没有「文件 + 锚点」形式的引用（本项无需校验）' + $lineRefNote) }
-elseif ($refBad -eq 0) { Write-Ok ("{0} 处引用全部可定位（另有 {1} 处已记录的失效、{2} 处锚点只命中正文）{3}" -f $refTotal, $refSkip, $refBody, $lineRefNote) }
-else { Write-Note ("共扫描 {0} 处引用：失败 {1}，已记录的失效 {2}，锚点降级 {3}{4}" -f $refTotal, $refBad, $refSkip, $refBody, $lineRefNote) }
+elseif ($refTotal -eq 0 -and $pathTotal -eq 0) { Write-Ok ('没有可校验的引用（本项无需校验）' + $lineRefNote) }
+elseif ($refBad -eq 0 -and $pathBad -eq 0) { Write-Ok ("{0} 处引用全部可定位、{1} 处仓库路径存在（另有 {2} 处已记录的失效、{3} 处锚点只命中正文）{4}" -f $refTotal, $pathTotal, $refSkip, $refBody, $lineRefNote) }
+else { Write-Note ("共扫描 {0} 处引用（另 {1} 处仓库路径）：失败 {2}，已记录的失效 {3}，锚点降级 {4}{5}" -f $refTotal, $pathTotal, ($refBad + $pathBad), $refSkip, $refBody, $lineRefNote) }
 
 # ---------- ⑥ 忽略规则：过宽规则 + 记忆是否真的被忽略 ----------
 Write-Head 6 '忽略规则：过宽规则 / 记忆与入口是否真的被忽略'
@@ -654,6 +772,122 @@ else {
     }
     if ($hits -eq 0) { Write-Ok ("扫描 {0} 个入库 markdown：没有引用本机记忆 / 私有目录 / 本机绝对路径" -f $scanned) }
     else { Write-Note '这些引用对远程读者是死链或隐私泄漏 —— 要么写进入库文档，要么去掉本机专属内容' }
+}
+
+# ---------- ⑩ knowledge/ 变更史密度 ----------
+Write-Head 10 ("knowledge/ 变更史密度（日期 > {0} / 非豁免哈希 > {1}）" -f $effMaxDates, $effMaxHashes)
+$histFiles = @()
+if (Test-Path -LiteralPath $KnowledgeDir) {
+    $histFiles = @(Get-ChildItem -LiteralPath $KnowledgeDir -File -Filter *.md | Where-Object { $_.Name -notin @('log.md', 'pitfalls.md') })
+}
+$histWarn = 0
+foreach ($f in $histFiles) {
+    $t = Read-Text $f.FullName
+    $rel = Get-RelPath $f.FullName
+    $dateCount = [regex]::Matches($t, '20\d{2}-\d{2}-\d{2}').Count
+    $hashCount = 0
+    foreach ($ln in ($t -split "`r?`n")) {
+        if ($ln -match '已作废|已被|取代|不再适用') { continue }
+        $hashCount += [regex]::Matches($ln, '`[0-9a-f]{7,40}`').Count
+    }
+    $hits = @()
+    if ($dateCount -gt $effMaxDates) { $hits += ("{0} 个日期" -f $dateCount) }
+    if ($hashCount -gt $effMaxHashes) { $hits += ("{0} 个提交号" -f $hashCount) }
+    if ($hits.Count -gt 0) {
+        $histWarn++
+        Write-Warn2 ("{0} 写进了变更史（{1}）—— knowledge 只写当前规则；演进过程与提交号进 log.md" -f $rel, ($hits -join '、'))
+    }
+}
+if ($histFiles.Count -eq 0) { Write-Note 'knowledge/ 为空，跳过' }
+elseif ($histWarn -eq 0) { Write-Ok ("{0} 个 knowledge 文件都没有变更史堆积（日期 <= {1}、非豁免哈希 <= {2}）" -f $histFiles.Count, $effMaxDates, $effMaxHashes) }
+
+# ---------- ⑪ knowledge/ 里的待办 ----------
+Write-Head 11 'knowledge/ 里的待办（会过期的内容）'
+$todoHits = 0
+foreach ($f in $histFiles) {
+    $rel = Get-RelPath $f.FullName
+    $ln = 0
+    foreach ($line in ((Read-Text $f.FullName) -split "`r?`n")) {
+        $ln++
+        $s = $line -replace '`[^`]*`', ''
+        if ($s -match '^\s{0,3}#{1,6}\s*.*(待确认|仍待|未定|TODO|FIXME)' -or $s -match '^\s*[-*+]\s+(待确认|仍待|待办|未定|TODO|FIXME)') {
+            $todoHits++
+            Write-Warn2 ("{0}:{1} 像待办（{2}）—— 会过期的内容归 status/ 或项目文档" -f $rel, $ln, $line.Trim())
+        }
+    }
+}
+if ($histFiles.Count -gt 0 -and $todoHits -eq 0) { Write-Ok 'knowledge/ 里没有待办式内容（待确认 / 仍待 / 未定 / TODO）' }
+
+# ---------- ⑫ 空壳子文件 / 空小节 ----------
+Write-Head 12 '空壳子文件 / 空小节'
+$shellFiles = @()
+if (Test-Path -LiteralPath $KnowledgeDir) {
+    $shellFiles = @(Get-ChildItem -LiteralPath $KnowledgeDir -File -Filter *.md | Where-Object { $_.Name -ne 'log.md' })
+}
+$shellHits = 0
+function Test-SubstantiveLine($line) {
+    $x = $line.Trim()
+    if ($x -eq '') { return $false }
+    if ($x -match '^#{1,6}\s') { return $false }
+    if ($x.StartsWith('>')) { return $false }
+    if ($x -match '^[-*+]\s*$') { return $false }
+    return $true
+}
+foreach ($f in $shellFiles) {
+    $rel = Get-RelPath $f.FullName
+    $raw = (Read-Text $f.FullName)
+    $clean = [regex]::Replace($raw, '(?s)<!--.*?-->', '')
+    $rows = @($clean -split "`r?`n")
+    $substantive = @($rows | Where-Object { Test-SubstantiveLine $_ }).Count
+    if ($substantive -eq 0) {
+        $shellHits++
+        Write-Warn2 ("{0} 去掉注释后没有实质内容 —— 未启用的子文件：删文件 + 删 AGENTS 索引行" -f $rel)
+        continue
+    }
+    $sec = ''
+    $secLines = 0
+    foreach ($ln in $rows) {
+        if ($ln -match '^\s{0,3}##\s+(.+)$') {
+            if ($sec -ne '' -and $secLines -eq 0) {
+                $shellHits++
+                Write-Warn2 ("{0} 的「## {1}」是空小节 —— 删掉或补内容" -f $rel, $sec)
+            }
+            $sec = $Matches[1].Trim(); $secLines = 0
+            continue
+        }
+        if ($sec -ne '' -and (Test-SubstantiveLine $ln)) { $secLines++ }
+    }
+    if ($sec -ne '' -and $secLines -eq 0) {
+        $shellHits++
+        Write-Warn2 ("{0} 的「## {1}」是空小节 —— 删掉或补内容" -f $rel, $sec)
+    }
+}
+if ($shellFiles.Count -gt 0 -and $shellHits -eq 0) { Write-Ok ("{0} 个 knowledge 文件都有实质内容、无空小节" -f $shellFiles.Count) }
+
+# ---------- ⑬ 备份时效（默认关闭） ----------
+Write-Head 13 '备份时效（默认关闭；-BackupMaxAgeDays N 开启）'
+if ($BackupMaxAgeDays -le 0) {
+    Write-Ok '未启用 —— 默认不因「从未备份」告警；需要时加 -BackupMaxAgeDays N'
+}
+elseif (-not (Test-Path -LiteralPath $BackupRoot)) {
+    Write-Warn2 '从未备份 —— 建议先跑一次 -Backup（记忆不入库时这是唯一的历史）'
+}
+else {
+    $dirs = @(Get-ChildItem -LiteralPath $BackupRoot -Directory | Sort-Object Name -Descending)
+    if ($dirs.Count -eq 0) {
+        Write-Warn2 '从未备份 —— 建议先跑一次 -Backup（记忆不入库时这是唯一的历史）'
+    }
+    else {
+        $latest = $dirs[0]
+        $snapTime = $latest.CreationTime
+        try { $snapTime = [datetime]::ParseExact($latest.Name, 'yyyyMMdd-HHmmss', $null) } catch { }
+        $age = [int](((Get-Date) - $snapTime).TotalDays)
+        $newer = @(Get-MemoryFiles | Where-Object { $_.LastWriteTime -gt $snapTime })
+        if ($age -gt $BackupMaxAgeDays -and $newer.Count -gt 0) {
+            Write-Warn2 ("最新快照 {0}（{1} 天前 > {2}），且有 {3} 个记忆文件比它新 —— 记忆改过但没快照" -f $latest.Name, $age, $BackupMaxAgeDays, $newer.Count)
+        }
+        else { Write-Ok ("最新快照 {0}（{1} 天前），记忆没有比快照更新" -f $latest.Name, $age) }
+    }
 }
 
 # ---------- 额外门槛（仅 -Strict）：把「有意放宽」与「版本落后」也算失败 ----------
